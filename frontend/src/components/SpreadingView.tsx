@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { PDFViewer } from './PDFViewer';
 import { FinancialTable } from './FinancialTable';
 import { ExportMenu } from './ExportMenu';
@@ -31,7 +31,13 @@ export const SpreadingView: React.FC<SpreadingViewProps> = ({
 }) => {
   // For combined view, track which tab is active
   const [activeTab, setActiveTab] = useState<'income' | 'balance'>('income');
+  const [activePdfUrl, setActivePdfUrl] = useState<string | undefined>(metadata.pdf_url);
   
+  // Update active PDF if metadata changes
+  useEffect(() => {
+    setActivePdfUrl(metadata.pdf_url);
+  }, [metadata.pdf_url]);
+
   const isCombined = isCombinedExtraction(data);
   const combinedData = isCombined ? data as CombinedFinancialExtraction : null;
   
@@ -62,6 +68,12 @@ export const SpreadingView: React.FC<SpreadingViewProps> = ({
       return types.join(' & ') || 'Financial Statements';
     }
     return effectiveDocType === 'income' ? 'Income Statement' : 'Balance Sheet';
+  };
+
+  const handlePeriodSelect = (pdfUrl?: string) => {
+    if (pdfUrl) {
+      setActivePdfUrl(pdfUrl);
+    }
   };
 
   return (
@@ -198,14 +210,18 @@ export const SpreadingView: React.FC<SpreadingViewProps> = ({
       <div className="flex-1 flex overflow-hidden">
         {/* Left Panel - PDF Viewer */}
         <div className="w-1/2 border-r border-gray-200">
-          <PDFViewer pdfUrl={metadata.pdf_url} />
+          <PDFViewer pdfUrl={activePdfUrl || metadata.pdf_url} />
         </div>
 
         {/* Right Panel - Financial Table */}
         <div className="w-1/2 overflow-auto bg-gray-50">
           <div className="p-6">
             {displayData ? (
-              <FinancialTable data={displayData} docType={effectiveDocType} />
+              <FinancialTable 
+                data={displayData} 
+                docType={effectiveDocType} 
+                onPeriodSelect={handlePeriodSelect}
+              />
             ) : (
               <div className="text-center text-gray-500 py-8">
                 No data available for this statement type

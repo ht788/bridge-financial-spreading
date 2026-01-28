@@ -56,13 +56,13 @@
               "value": 2933280.0,
               "tolerance_percent": 5.0,
               "required": true,
-              "notes": "Total Expenses: $2,933,280"
+              "notes": "Total Expenses: $2,933,280 (SGA + R&D, excluding D&A)"
             },
             "operating_income": {
               "value": 373332.0,
               "tolerance_percent": 5.0,
               "required": true,
-              "notes": "EBITDA: $373,332"
+              "notes": "EBITDA: $373,332 (Gross Profit $3,306,612 - Total Operating Expenses $2,933,280)"
             },
             "interest_expense": {
               "value": 159415.0,
@@ -173,16 +173,28 @@
               "notes": "Calculated: PPE Gross ($1,305,746) - Accumulated Depreciation ($652,263) = $653,483"
             },
             "intangible_assets": {
+              "value": 4826103.0,
+              "tolerance_percent": 5.0,
+              "required": false,
+              "notes": "Intangible Assets: $4,826,103 (gross, before amortization)"
+            },
+            "accumulated_amortization": {
+              "value": -2288797.0,
+              "tolerance_percent": 5.0,
+              "required": false,
+              "notes": "Amortization: ($2,288,797)"
+            },
+            "intangible_assets_net": {
               "value": 2537306.0,
               "tolerance_percent": 5.0,
               "required": false,
-              "notes": "Intangible Assets: $4,826,103 - Amortization: ($2,288,797)"
+              "notes": "Calculated: Intangible Assets ($4,826,103) - Amortization ($2,288,797) = $2,537,306"
             },
             "goodwill": {
               "value": null,
               "tolerance_percent": 5.0,
               "required": false,
-              "notes": "Not present - may be included in Intangible Assets"
+              "notes": "Not separately stated - may be included in Intangible Assets"
             },
             "long_term_investments": {
               "value": 517247.0,
@@ -356,7 +368,7 @@
               "value": 3488096.0,
               "tolerance_percent": 5.0,
               "required": false,
-              "notes": "Sum of all SG&A line items including Advertising & Marketing: $1,141,447, Wages and Salary: $1,185,229, Rent: $263,500, etc."
+              "notes": "Advertising & Marketing: $1,141,447 + Commissions: $12,930 + Consultants: $134,623 + Insurances: $63,430 + Licenses & Compliance: $23,584 + Freight Out: $76,411 + Legal & Accounting: $29,056 + Merchant Fees: $4,316 + Office Supplies: $29,722 + Software: $208,427 + Recruitments & Benefits: $121,197 + Wages and Salary: $1,185,229 + Rent: $263,500 + Other Expenses: $194,224"
             },
             "research_and_development": {
               "value": 106353.0,
@@ -374,19 +386,19 @@
               "value": null,
               "tolerance_percent": 5.0,
               "required": false,
-              "notes": "Other Expenses mapped to SGA"
+              "notes": "NOT FOUND: other_operating_expenses not present - generic 'Other Expenses' mapped to SGA per guidelines"
             },
             "total_operating_expenses": {
               "value": 3594449.0,
               "tolerance_percent": 5.0,
               "required": true,
-              "notes": "Total Expenses: $3,594,449"
+              "notes": "Total Expenses: $3,594,449 (SGA + R&D, excluding D&A)"
             },
             "operating_income": {
               "value": 1004503.0,
               "tolerance_percent": 5.0,
               "required": true,
-              "notes": "EBITDA: $1,004,503"
+              "notes": "EBITDA: $1,004,503 (Gross Profit $4,598,952 - Total Operating Expenses $3,594,449)"
             },
             "interest_expense": {
               "value": 110348.0,
@@ -398,25 +410,25 @@
               "value": null,
               "tolerance_percent": 5.0,
               "required": false,
-              "notes": "Not present in document"
+              "notes": "NOT FOUND: interest_income not present in document for this period"
             },
             "other_income_expense": {
-              "value": 8.0,
+              "value": -8.0,
               "tolerance_percent": 10.0,
               "required": false,
-              "notes": "Other: $8"
+              "notes": "Other: $8 (expense)"
             },
             "pretax_income": {
-              "value": 471167.0,
+              "value": 374158.0,
               "tolerance_percent": 10.0,
               "required": false,
-              "notes": "Calculated: EBITDA ($1,004,503) - D&A ($519,989) - Interest ($110,348) - Other ($8) + Tax Credit ($48,505)"
+              "notes": "Calculated: Operating Income ($484,514) - Interest ($110,348) - Other ($8) = $374,158; Verified: Net Income ($422,662) - Tax Benefit ($48,505) = $374,157"
             },
             "income_tax_expense": {
               "value": -48505.0,
               "tolerance_percent": 10.0,
               "required": false,
-              "notes": "Federal Tax: ($48,505) - tax credit"
+              "notes": "Federal Tax: ($48,505) - shown as negative expense indicating tax benefit/credit; Verified: Pretax ($374,158) + Tax Benefit ($48,505) = Net Income ($422,663)"
             },
             "net_income": {
               "value": 422662.0,

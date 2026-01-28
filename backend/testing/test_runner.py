@@ -125,6 +125,8 @@ TEST_COMPANIES: List[TestCompany] = [
             TestFile(filename="2024_Q4_pNeo_Consolidated_Financial_Reports.pdf", doc_type="income", period="2024",
                      description="Consolidated P&L for calendar year 2024"),
             # Balance sheets
+            TestFile(filename="FY_2023_pNeo_Financial_Packet.pdf", doc_type="balance", period="2023",
+                     description="FY2023 Financial Packet with Balance Sheet"),
             TestFile(filename="2024_Q4_pNeo_Consolidated_Financial_Reports.pdf", doc_type="balance", period="2024",
                      description="Consolidated Balance Sheet as of 12/31/24"),
         ],

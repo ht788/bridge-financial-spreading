@@ -442,6 +442,169 @@ async def spread_financial_statement(
         )
 
 
+async def _process_single_file(
+    file_content: bytes,
+    filename: str,
+    doc_type: str,
+    job_id: str,
+    batch_id: str,
+    idx: int,
+    total_files: int,
+    period: str,
+    max_pages: Optional[int],
+    dpi: int,
+    model_override: Optional[str],
+    semaphore: asyncio.Semaphore,
+    progress_counter: dict,
+    progress_lock: asyncio.Lock
+) -> BatchFileResult:
+    """
+    Process a single file for batch processing.
+    
+    This helper function encapsulates the per-file logic for parallel execution.
+    Uses a semaphore to limit concurrent extractions and respects API rate limits.
+    
+    Args:
+        file_content: Raw bytes of the PDF file
+        filename: Original filename
+        doc_type: Document type ('income', 'balance', or 'auto')
+        job_id: Unique job identifier
+        batch_id: Batch identifier for progress tracking
+        idx: File index in the batch
+        total_files: Total number of files in batch
+        period: Fiscal period to extract
+        max_pages: Maximum pages to process
+        dpi: DPI for PDF conversion
+        model_override: Optional model override
+        semaphore: Asyncio semaphore for concurrency control
+        progress_counter: Shared dict for tracking progress {'completed': int}
+        progress_lock: Lock for atomic progress updates
+        
+    Returns:
+        BatchFileResult with processing outcome
+    """
+    async with semaphore:
+        await emit_log("info", f"Processing file {idx + 1}/{total_files}: {filename}", "api", job_id, filename)
+        
+        # Validate file type
+        if not filename.endswith('.pdf'):
+            await emit_log("warning", f"Skipping non-PDF file: {filename}", "api", job_id, filename)
+            return BatchFileResult(
+                filename=filename,
+                success=False,
+                error="Only PDF files are supported",
+                job_id=job_id
+            )
+        
+        # Validate doc_type - now supports 'auto' for parallel IS+BS extraction
+        if doc_type not in ['income', 'balance', 'auto']:
+            await emit_log("warning", f"Invalid doc_type '{doc_type}' for {filename}", "api", job_id, filename)
+            return BatchFileResult(
+                filename=filename,
+                success=False,
+                error="doc_type must be 'income', 'balance', or 'auto'",
+                job_id=job_id
+            )
+        
+        try:
+            # Save file
+            file_path = UPLOAD_DIR / f"{job_id}_{filename}"
+            
+            with open(file_path, "wb") as buffer:
+                buffer.write(file_content)
+            
+            await emit_log("debug", f"File saved: {file_path.name}", "api", job_id, filename)
+            
+            # Process based on doc_type
+            is_auto_mode = doc_type == "auto"
+            await emit_log("info", f"Processing {filename} as {doc_type}", "spreader", job_id, filename, {
+                "auto_detect_mode": is_auto_mode
+            })
+            
+            if is_auto_mode:
+                # Use async combined extraction - extracts IS+BS in parallel within this file
+                result = await spread_pdf_combined(
+                    pdf_path=str(file_path),
+                    max_pages=max_pages,
+                    dpi=dpi,
+                    model_override=model_override
+                )
+            else:
+                # Use asyncio.to_thread to run sync function without blocking
+                result = await asyncio.to_thread(
+                    spread_financials,
+                    str(file_path),
+                    doc_type,
+                    period,
+                    True,  # multi_period=True
+                    max_pages=max_pages,
+                    dpi=dpi,
+                    model_override=model_override
+                )
+            
+            result_data = result.model_dump()
+            metadata = calculate_extraction_metadata(result_data)
+            metadata["original_filename"] = filename
+            metadata["job_id"] = job_id
+            metadata["pdf_url"] = f"/api/files/{job_id}_{filename}"
+            metadata["doc_type"] = doc_type
+            
+            # Add auto-detection specific metadata
+            if is_auto_mode and isinstance(result, CombinedFinancialExtraction):
+                metadata["is_combined"] = True
+                metadata["detected_income_statement"] = result.detected_types.has_income_statement
+                metadata["detected_balance_sheet"] = result.detected_types.has_balance_sheet
+                metadata["statement_types_extracted"] = result.statement_types_extracted
+                if result.extraction_metadata:
+                    metadata["execution_time_seconds"] = result.extraction_metadata.get("execution_time_seconds")
+                    metadata["parallel_extraction"] = result.extraction_metadata.get("parallel_extraction", False)
+            
+            await emit_log("info", f"Successfully processed {filename}", "spreader", job_id, filename, {
+                "extraction_rate": metadata.get("extraction_rate"),
+                "average_confidence": metadata.get("average_confidence"),
+                "is_combined": metadata.get("is_combined", False)
+            })
+            
+            batch_result = BatchFileResult(
+                filename=filename,
+                success=True,
+                data=result_data,
+                metadata=metadata,
+                job_id=job_id
+            )
+            
+        except Exception as e:
+            error_trace = traceback.format_exc()
+            await emit_log("error", f"Failed to process {filename}: {str(e)}", "spreader", job_id, filename,
+                          {"error_type": type(e).__name__}, error_trace)
+            
+            batch_result = BatchFileResult(
+                filename=filename,
+                success=False,
+                error=str(e),
+                job_id=job_id
+            )
+        
+        # Atomic progress update and broadcast
+        async with progress_lock:
+            progress_counter['completed'] += 1
+            current = progress_counter['completed']
+        
+        await broadcast_message({
+            "type": "progress",
+            "job_id": batch_id,
+            "timestamp": datetime.utcnow().isoformat() + "Z",
+            "payload": {
+                "current": current,
+                "total": total_files,
+                "filename": filename,
+                "status": "success" if batch_result.success else "error"
+            }
+        })
+        
+        return batch_result
+
+
 @app.post("/api/spread/batch", response_model=BatchSpreadResponse)
 async def spread_batch(
     files: List[UploadFile] = File(...),
@@ -449,10 +612,15 @@ async def spread_batch(
     period: str = Form("Latest"),
     max_pages: Optional[int] = Form(None),
     dpi: int = Form(200),
-    model_override: Optional[str] = Form(None)
+    model_override: Optional[str] = Form(None),
+    parallel: bool = Form(True),
+    max_concurrent: int = Form(4)
 ):
     """
     Upload and process multiple financial statement PDFs.
+    
+    Files can be processed in parallel for improved performance. When doc_type='auto'
+    is used, each file also extracts both Income Statement and Balance Sheet in parallel.
     
     Prompts are loaded from LangSmith Hub. If Hub is unavailable,
     the request will fail with a clear error message.
@@ -460,10 +628,13 @@ async def spread_batch(
     Args:
         files: List of PDF file uploads
         doc_types: JSON array of document types matching the files order
+                   ('income', 'balance', or 'auto' for auto-detection)
         period: Fiscal period to extract
         max_pages: Maximum pages per file
         dpi: DPI for PDF conversion
         model_override: Optional model override (e.g., 'gpt-5', 'gpt-4o')
+        parallel: If True (default), process files in parallel; if False, sequential
+        max_concurrent: Maximum number of concurrent file extractions (default: 4)
         
     Returns:
         BatchSpreadResponse with results for each file
@@ -485,119 +656,120 @@ async def spread_batch(
             detail=f"Number of doc_types ({len(doc_type_list)}) must match number of files ({len(files)})"
         )
     
-    await emit_log("info", f"Starting batch processing of {len(files)} files", "api", batch_id, details={
+    # Validate all doc_types upfront
+    for idx, doc_type in enumerate(doc_type_list):
+        if doc_type not in ['income', 'balance', 'auto']:
+            await emit_log("error", f"Invalid doc_type '{doc_type}' at index {idx}", "api", batch_id)
+            raise HTTPException(
+                status_code=400,
+                detail=f"Invalid doc_type '{doc_type}' at index {idx}. Must be 'income', 'balance', or 'auto'"
+            )
+    
+    processing_mode = "parallel" if parallel else "sequential"
+    await emit_log("info", f"Starting batch processing of {len(files)} files ({processing_mode})", "api", batch_id, details={
         "total_files": len(files),
-        "filenames": [f.filename for f in files]
+        "filenames": [f.filename for f in files],
+        "parallel": parallel,
+        "max_concurrent": max_concurrent if parallel else 1,
+        "doc_types": doc_type_list
     })
     
-    results: List[BatchFileResult] = []
-    completed = 0
-    failed = 0
+    # Pre-read all file contents (needed because UploadFile can only be read once)
+    file_contents = []
+    for file in files:
+        content = await file.read()
+        file_contents.append(content)
     
-    for idx, (file, doc_type) in enumerate(zip(files, doc_type_list)):
-        job_id = f"{batch_id}_{idx}"
-        filename = file.filename or f"file_{idx}.pdf"
+    if parallel:
+        # PARALLEL PROCESSING: Use asyncio.gather with semaphore for concurrency control
+        semaphore = asyncio.Semaphore(max_concurrent)
+        progress_counter = {'completed': 0}
+        progress_lock = asyncio.Lock()
         
-        await emit_log("info", f"Processing file {idx + 1}/{len(files)}: {filename}", "api", job_id, filename)
-        
-        # Validate file type
-        if not filename.endswith('.pdf'):
-            await emit_log("warning", f"Skipping non-PDF file: {filename}", "api", job_id, filename)
-            results.append(BatchFileResult(
+        # Create tasks for all files
+        tasks = []
+        for idx, (file, content, doc_type) in enumerate(zip(files, file_contents, doc_type_list)):
+            job_id = f"{batch_id}_{idx}"
+            filename = file.filename or f"file_{idx}.pdf"
+            
+            task = _process_single_file(
+                file_content=content,
                 filename=filename,
-                success=False,
-                error="Only PDF files are supported",
-                job_id=job_id
-            ))
-            failed += 1
-            continue
-        
-        # Validate doc_type
-        if doc_type not in ['income', 'balance']:
-            await emit_log("warning", f"Invalid doc_type '{doc_type}' for {filename}", "api", job_id, filename)
-            results.append(BatchFileResult(
-                filename=filename,
-                success=False,
-                error="doc_type must be 'income' or 'balance'",
-                job_id=job_id
-            ))
-            failed += 1
-            continue
-        
-        try:
-            # Save file
-            file_path = UPLOAD_DIR / f"{job_id}_{filename}"
-            content = await file.read()
-            
-            with open(file_path, "wb") as buffer:
-                buffer.write(content)
-            
-            await emit_log("debug", f"File saved: {file_path.name}", "api", job_id, filename)
-            
-            # Process
-            await emit_log("info", f"Processing {filename} as {doc_type}", "spreader", job_id, filename)
-            
-            # Enable multi-period mode to extract all periods in the document
-            result = spread_financials(
-                file_path=str(file_path),
                 doc_type=doc_type,
+                job_id=job_id,
+                batch_id=batch_id,
+                idx=idx,
+                total_files=len(files),
                 period=period,
-                multi_period=True,  # Extract all periods for side-by-side comparison
                 max_pages=max_pages,
                 dpi=dpi,
-                model_override=model_override
+                model_override=model_override,
+                semaphore=semaphore,
+                progress_counter=progress_counter,
+                progress_lock=progress_lock
             )
-            
-            result_data = result.model_dump()
-            metadata = calculate_extraction_metadata(result_data)
-            metadata["original_filename"] = filename
-            metadata["job_id"] = job_id
-            metadata["pdf_url"] = f"/api/files/{job_id}_{filename}"
-            
-            await emit_log("info", f"Successfully processed {filename}", "spreader", job_id, filename, {
-                "extraction_rate": metadata.get("extraction_rate"),
-                "average_confidence": metadata.get("average_confidence")
-            })
-            
-            results.append(BatchFileResult(
-                filename=filename,
-                success=True,
-                data=result_data,
-                metadata=metadata,
-                job_id=job_id
-            ))
-            completed += 1
-            
-        except Exception as e:
-            error_trace = traceback.format_exc()
-            await emit_log("error", f"Failed to process {filename}: {str(e)}", "spreader", job_id, filename,
-                          {"error_type": type(e).__name__}, error_trace)
-            
-            results.append(BatchFileResult(
-                filename=filename,
-                success=False,
-                error=str(e),
-                job_id=job_id
-            ))
-            failed += 1
+            tasks.append(task)
         
-        # Broadcast progress
-        await broadcast_message({
-            "type": "progress",
-            "job_id": batch_id,
-            "timestamp": datetime.utcnow().isoformat() + "Z",
-            "payload": {
-                "current": idx + 1,
-                "total": len(files),
-                "filename": filename,
-                "status": "success" if results[-1].success else "error"
-            }
-        })
+        # Execute all tasks in parallel (with semaphore limiting concurrent extractions)
+        results = await asyncio.gather(*tasks, return_exceptions=True)
+        
+        # Process results, handling any exceptions that were returned
+        processed_results: List[BatchFileResult] = []
+        for idx, result in enumerate(results):
+            if isinstance(result, Exception):
+                # Task raised an exception
+                filename = files[idx].filename or f"file_{idx}.pdf"
+                job_id = f"{batch_id}_{idx}"
+                await emit_log("error", f"Task exception for {filename}: {str(result)}", "api", job_id, filename)
+                processed_results.append(BatchFileResult(
+                    filename=filename,
+                    success=False,
+                    error=str(result),
+                    job_id=job_id
+                ))
+            else:
+                processed_results.append(result)
+        
+        results = processed_results
+        
+    else:
+        # SEQUENTIAL PROCESSING: Process files one at a time (original behavior)
+        results: List[BatchFileResult] = []
+        progress_counter = {'completed': 0}
+        progress_lock = asyncio.Lock()
+        semaphore = asyncio.Semaphore(1)  # Effectively sequential
+        
+        for idx, (file, content, doc_type) in enumerate(zip(files, file_contents, doc_type_list)):
+            job_id = f"{batch_id}_{idx}"
+            filename = file.filename or f"file_{idx}.pdf"
+            
+            result = await _process_single_file(
+                file_content=content,
+                filename=filename,
+                doc_type=doc_type,
+                job_id=job_id,
+                batch_id=batch_id,
+                idx=idx,
+                total_files=len(files),
+                period=period,
+                max_pages=max_pages,
+                dpi=dpi,
+                model_override=model_override,
+                semaphore=semaphore,
+                progress_counter=progress_counter,
+                progress_lock=progress_lock
+            )
+            results.append(result)
     
-    await emit_log("info", f"Batch processing complete: {completed}/{len(files)} successful", "api", batch_id, details={
+    # Calculate completion stats
+    completed = sum(1 for r in results if r.success)
+    failed = len(results) - completed
+    
+    await emit_log("info", f"Batch processing complete: {completed}/{len(files)} successful ({processing_mode})", "api", batch_id, details={
         "completed": completed,
         "failed": failed,
-        "total": len(files)
+        "total": len(files),
+        "parallel": parallel
     })
     
     return BatchSpreadResponse(

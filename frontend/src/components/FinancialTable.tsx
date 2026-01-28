@@ -12,12 +12,13 @@ import {
 import { formatCurrency, fieldNameToLabel, normalizePeriodLabel } from '../utils';
 import { ConfidenceBadge } from './ConfidenceBadge';
 import { TrendSparkline } from './TrendSparkline';
-import { Info, Calendar } from 'lucide-react';
+import { Info, Calendar, FileText } from 'lucide-react';
 import clsx from 'clsx';
 
 interface FinancialTableProps {
   data: FinancialStatement | MultiPeriodFinancialStatement;
   docType: 'income' | 'balance';
+  onPeriodSelect?: (pdfUrl?: string) => void;
 }
 
 interface TooltipProps {
@@ -82,9 +83,10 @@ const Tooltip: React.FC<TooltipProps> = ({ lineItem, fieldName }) => {
 
 interface MultiPeriodIncomeTableProps {
   data: MultiPeriodIncomeStatement;
+  onPeriodSelect?: (pdfUrl?: string) => void;
 }
 
-const MultiPeriodIncomeStatementTable: React.FC<MultiPeriodIncomeTableProps> = ({ data }) => {
+const MultiPeriodIncomeStatementTable: React.FC<MultiPeriodIncomeTableProps> = ({ data, onPeriodSelect }) => {
   const { periods, currency = 'USD', scale = 'units' } = data;
   
   const sections = [
@@ -133,9 +135,22 @@ const MultiPeriodIncomeStatementTable: React.FC<MultiPeriodIncomeTableProps> = (
                   Trend
                 </th>
                 {periods.map((period, idx) => (
-                  <th key={idx} className="py-3 px-3 text-right text-xs font-semibold text-gray-600 uppercase tracking-wider bg-gray-50/80 backdrop-blur-sm">
+                  <th 
+                    key={idx} 
+                    className={clsx(
+                      "py-3 px-3 text-right text-xs font-semibold text-gray-600 uppercase tracking-wider bg-gray-50/80 backdrop-blur-sm group relative",
+                      onPeriodSelect && period.pdf_url ? "cursor-pointer hover:bg-blue-50/50 transition-colors" : ""
+                    )}
+                    onClick={() => period.pdf_url && onPeriodSelect?.(period.pdf_url)}
+                    title={period.pdf_url ? "Click to view source document" : undefined}
+                  >
                     <div className="flex flex-col items-end gap-0.5">
-                      <span>{normalizePeriodLabel(period.period_label)}</span>
+                      <div className="flex items-center gap-1.5">
+                        {period.pdf_url && (
+                          <FileText className="w-3 h-3 text-blue-400 opacity-0 group-hover:opacity-100 transition-opacity" />
+                        )}
+                        <span>{normalizePeriodLabel(period.period_label)}</span>
+                      </div>
                       {period.end_date && (
                         <span className="text-[10px] text-gray-400 font-normal flex items-center gap-1">
                           <Calendar className="w-3 h-3" />
@@ -214,9 +229,10 @@ const MultiPeriodIncomeStatementTable: React.FC<MultiPeriodIncomeTableProps> = (
 
 interface MultiPeriodBalanceTableProps {
   data: MultiPeriodBalanceSheet;
+  onPeriodSelect?: (pdfUrl?: string) => void;
 }
 
-const MultiPeriodBalanceSheetTable: React.FC<MultiPeriodBalanceTableProps> = ({ data }) => {
+const MultiPeriodBalanceSheetTable: React.FC<MultiPeriodBalanceTableProps> = ({ data, onPeriodSelect }) => {
   const { periods, currency = 'USD', scale = 'units' } = data;
   
   const sections = [
@@ -308,9 +324,22 @@ const MultiPeriodBalanceSheetTable: React.FC<MultiPeriodBalanceTableProps> = ({ 
                   Trend
                 </th>
                 {periods.map((period, idx) => (
-                  <th key={idx} className="py-3 px-3 text-right text-xs font-semibold text-gray-600 uppercase tracking-wider bg-gray-50/80 backdrop-blur-sm">
+                  <th 
+                    key={idx} 
+                    className={clsx(
+                      "py-3 px-3 text-right text-xs font-semibold text-gray-600 uppercase tracking-wider bg-gray-50/80 backdrop-blur-sm group relative",
+                      onPeriodSelect && period.pdf_url ? "cursor-pointer hover:bg-blue-50/50 transition-colors" : ""
+                    )}
+                    onClick={() => period.pdf_url && onPeriodSelect?.(period.pdf_url)}
+                    title={period.pdf_url ? "Click to view source document" : undefined}
+                  >
                     <div className="flex flex-col items-end gap-0.5">
-                      <span>{normalizePeriodLabel(period.period_label)}</span>
+                      <div className="flex items-center gap-1.5">
+                        {period.pdf_url && (
+                          <FileText className="w-3 h-3 text-blue-400 opacity-0 group-hover:opacity-100 transition-opacity" />
+                        )}
+                        <span>{normalizePeriodLabel(period.period_label)}</span>
+                      </div>
                       {period.end_date && (
                         <span className="text-[10px] text-gray-400 font-normal flex items-center gap-1">
                           <Calendar className="w-3 h-3" />
@@ -581,7 +610,7 @@ const SinglePeriodBalanceSheetTable: React.FC<{ data: BalanceSheet }> = ({ data 
 // MAIN EXPORT
 // =============================================================================
 
-export const FinancialTable: React.FC<FinancialTableProps> = ({ data, docType }) => {
+export const FinancialTable: React.FC<FinancialTableProps> = ({ data, docType, onPeriodSelect }) => {
   // Check if we have multi-period data
   const multiPeriod = isMultiPeriod(data);
   
@@ -642,9 +671,15 @@ export const FinancialTable: React.FC<FinancialTableProps> = ({ data, docType })
 
       {multiPeriod ? (
         docType === 'income' ? (
-          <MultiPeriodIncomeStatementTable data={data as MultiPeriodIncomeStatement} />
+          <MultiPeriodIncomeStatementTable 
+            data={data as MultiPeriodIncomeStatement} 
+            onPeriodSelect={onPeriodSelect}
+          />
         ) : (
-          <MultiPeriodBalanceSheetTable data={data as MultiPeriodBalanceSheet} />
+          <MultiPeriodBalanceSheetTable 
+            data={data as MultiPeriodBalanceSheet} 
+            onPeriodSelect={onPeriodSelect}
+          />
         )
       ) : (
         docType === 'income' ? (

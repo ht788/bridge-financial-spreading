@@ -80,6 +80,8 @@ export type FinancialStatement = IncomeStatement | BalanceSheet;
 export interface PeriodData {
   period_label: string;
   end_date?: string | null;
+  pdf_url?: string;
+  original_filename?: string;
 }
 
 export interface IncomeStatementPeriod extends PeriodData {
@@ -220,7 +222,7 @@ export interface BatchSpreadResponse {
   results: Array<{
     filename: string;
     success: boolean;
-    data?: FinancialStatement | MultiPeriodFinancialStatement;
+    data?: FinancialStatement | MultiPeriodFinancialStatement | CombinedFinancialExtraction;
     error?: string;
     metadata?: SpreadMetadata;
     job_id?: string;

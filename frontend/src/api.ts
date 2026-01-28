@@ -62,12 +62,17 @@ export const api = {
 
   /**
    * Upload and spread multiple financial statement PDFs
+   * 
+   * Files are processed in parallel by default for improved performance.
+   * When doc_type='auto' is used, each file also extracts both IS and BS in parallel.
    */
   async spreadBatch(files: FileUploadItem[], options?: {
     period?: string;
     max_pages?: number;
     dpi?: number;
     model_override?: string;
+    parallel?: boolean;  // Default: true - process files in parallel
+    max_concurrent?: number;  // Default: 4 - max concurrent file extractions
   }): Promise<BatchSpreadResponse> {
     const formData = new FormData();
     
@@ -92,6 +97,13 @@ export const api = {
     }
     if (options?.model_override !== undefined) {
       formData.append('model_override', options.model_override);
+    }
+    // Parallel processing options (both default to optimal values on backend)
+    if (options?.parallel !== undefined) {
+      formData.append('parallel', String(options.parallel));
+    }
+    if (options?.max_concurrent !== undefined) {
+      formData.append('max_concurrent', String(options.max_concurrent));
     }
 
     const response = await apiClient.post<BatchSpreadResponse>('/spread/batch', formData, {
