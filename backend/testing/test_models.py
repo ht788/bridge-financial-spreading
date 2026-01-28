@@ -222,6 +222,10 @@ class TestRunResult(BaseModel):
     # Execution metadata
     execution_time_seconds: float = 0.0
     error: Optional[str] = None
+    fallback_prompt_used: bool = Field(
+        default=False, 
+        description="Whether fallback prompt was used during extraction"
+    )
     
     # Additional metadata
     metadata: Dict[str, Any] = Field(default_factory=dict)
@@ -234,13 +238,13 @@ class TestRunResult(BaseModel):
 class TestRunConfig(BaseModel):
     """Configuration for executing a test run"""
     company_id: str = Field(description="Company to test")
-    model_name: str = Field(default="claude-sonnet-4-5", description="Model to use for extraction")
+    model_name: str = Field(default="claude-opus-4-5", description="Model to use for extraction")
     prompt_override: Optional[str] = Field(
         default=None, 
         description="Custom prompt to use instead of Hub prompt"
     )
     extended_thinking: bool = Field(
-        default=True,
+        default=False,
         description="Enable extended thinking for Anthropic models (ignored for OpenAI)"
     )
     dpi: int = Field(default=200, description="PDF conversion DPI")

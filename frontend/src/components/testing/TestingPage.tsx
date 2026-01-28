@@ -24,7 +24,7 @@ export const TestingPage: React.FC<TestingPageProps> = ({ onBack }) => {
   const [selectedCompany, setSelectedCompany] = useState<TestCompany | undefined>();
   const [selectedModel, setSelectedModel] = useState<AvailableModel | undefined>();
   const [promptContent, setPromptContent] = useState<string>('');
-  const [extendedThinking, setExtendedThinking] = useState<boolean>(true);
+  const [extendedThinking, setExtendedThinking] = useState<boolean>(false);
   const [currentResult, setCurrentResult] = useState<TestRunResult | null>(null);
   const [history, setHistory] = useState<TestRunSummary[]>([]);
   const [historyLoading, setHistoryLoading] = useState(false);

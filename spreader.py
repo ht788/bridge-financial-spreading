@@ -99,6 +99,19 @@ from period_utils import standardize_period_label, get_period_type
 # Configure logging
 logger = logging.getLogger(__name__)
 
+# Global flag to track if fallback prompt was used during extraction
+_fallback_prompt_used = False
+
+def reset_fallback_flag():
+    """Reset the fallback prompt flag before a new extraction."""
+    global _fallback_prompt_used
+    _fallback_prompt_used = False
+
+def was_fallback_used():
+    """Check if the fallback prompt was used during extraction."""
+    global _fallback_prompt_used
+    return _fallback_prompt_used
+
 
 # =============================================================================
 # PERIOD DETECTION (Vision)
@@ -1218,6 +1231,9 @@ def _invoke_llm_for_spreading(
         # Fallback: create a basic system message
         logger.warning("[INVOKE] Could not extract system message from Hub prompt, using fallback")
         system_message = SystemMessage(content=f"You are a financial analyst extracting {doc_type} statement data.")
+        # Set a flag to indicate fallback was used (will be checked by caller)
+        global _fallback_prompt_used
+        _fallback_prompt_used = True
     
     # Build the human message text with the period
     if retry_context:
@@ -1396,6 +1412,9 @@ def _invoke_llm_for_multi_period_spreading(
     if not system_message:
         logger.warning("[MULTI-PERIOD] Could not extract system message from Hub prompt, using enhanced fallback")
         system_message = SystemMessage(content=_get_enhanced_extraction_system_prompt(doc_type))
+        # Set a flag to indicate fallback was used (will be checked by caller)
+        global _fallback_prompt_used
+        _fallback_prompt_used = True
     
     # Build column selection instructions - EXPLICIT inclusion/exclusion
     period_cols = column_classification.period_columns
@@ -1490,7 +1509,7 @@ def spread_pdf(
     doc_type: str,
     period: str = "Latest",
     model_override: Optional[str] = None,
-    extended_thinking: bool = True,
+    extended_thinking: bool = False,
     max_pages: Optional[int] = None,
     dpi: int = 200,
     max_retries: int = 1,
@@ -1516,7 +1535,7 @@ def spread_pdf(
         doc_type: Type of document ('income' or 'balance')
         period: Fiscal period to extract (or 'Latest' for auto-detect)
         model_override: Override model (testing only)
-        extended_thinking: Enable extended thinking for Anthropic models (default True)
+        extended_thinking: Enable extended thinking for Anthropic models (default False)
         max_pages: Maximum pages to process
         dpi: Image resolution for PDF conversion
         max_retries: Maximum retry attempts on validation failure
@@ -1737,7 +1756,7 @@ def spread_pdf_multi_period(
     pdf_path: str,
     doc_type: str,
     model_override: Optional[str] = None,
-    extended_thinking: bool = True,
+    extended_thinking: bool = False,
     max_pages: Optional[int] = None,
     dpi: int = 200,
     max_retries: int = 1,
@@ -1765,7 +1784,7 @@ def spread_pdf_multi_period(
         pdf_path: Path to the PDF financial statement
         doc_type: Type of document ('income' or 'balance')
         model_override: Override model (testing only)
-        extended_thinking: Enable extended thinking for Anthropic models (default True)
+        extended_thinking: Enable extended thinking for Anthropic models (default False)
         max_pages: Maximum pages to process
         dpi: Image resolution for PDF conversion
         max_retries: Maximum retry attempts on validation failure
@@ -2007,7 +2026,7 @@ def spread_pdf_multi_period(
 async def spread_pdf_combined(
     pdf_path: str,
     model_override: Optional[str] = None,
-    extended_thinking: bool = True,
+    extended_thinking: bool = False,
     max_pages: Optional[int] = None,
     dpi: int = 200,
     max_retries: int = 1,
@@ -2029,7 +2048,7 @@ async def spread_pdf_combined(
     Args:
         pdf_path: Path to the PDF financial statement
         model_override: Override model (testing only)
-        extended_thinking: Enable extended thinking for Anthropic models (default True)
+        extended_thinking: Enable extended thinking for Anthropic models (default False)
         max_pages: Maximum pages to process
         dpi: Image resolution for PDF conversion
         max_retries: Maximum retry attempts on validation failure

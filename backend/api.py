@@ -25,7 +25,7 @@ from pydantic import BaseModel
 import sys
 sys.path.append(str(Path(__file__).parent.parent))
 
-from spreader import spread_financials, spread_pdf, spread_pdf_combined
+from spreader import spread_financials, spread_pdf, spread_pdf_combined, reset_fallback_flag, was_fallback_used
 from models import IncomeStatement, BalanceSheet, CombinedFinancialExtraction
 
 # Import testing module
@@ -283,7 +283,8 @@ async def spread_financial_statement(
     period: str = Form("Latest"),
     max_pages: Optional[int] = Form(None),
     dpi: int = Form(200),
-    model_override: Optional[str] = Form(None)
+    model_override: Optional[str] = Form(None),
+    extended_thinking: bool = Form(False)
 ):
     """
     Upload and process a financial statement PDF.
@@ -298,6 +299,7 @@ async def spread_financial_statement(
         max_pages: Maximum pages to process
         dpi: DPI for PDF image conversion
         model_override: Optional model override (e.g., 'gpt-5', 'gpt-4o')
+        extended_thinking: Enable extended thinking for Anthropic models (default False)
         
     Returns:
         SpreadResponse with extracted financial data
@@ -343,6 +345,9 @@ async def spread_financial_statement(
         # Step 2: Process PDF
         await emit_step(job_id, "process", "Processing PDF", "running", datetime.utcnow().isoformat())
         
+        # Reset fallback flag before processing
+        reset_fallback_flag()
+        
         is_auto_mode = doc_type == "auto"
         await emit_log("info", f"Starting PDF processing with doc_type={doc_type}", "spreader", job_id, filename, {
             "doc_type": doc_type,
@@ -368,7 +373,8 @@ async def spread_financial_statement(
                 pdf_path=str(file_path),
                 max_pages=max_pages,
                 dpi=dpi,
-                model_override=model_override
+                model_override=model_override,
+                extended_thinking=extended_thinking
             )
         else:
             # Enable multi-period mode to extract all periods in the document
@@ -379,10 +385,16 @@ async def spread_financial_statement(
                 multi_period=True,  # Extract all periods for side-by-side comparison
                 max_pages=max_pages,
                 dpi=dpi,
-                model_override=model_override
+                model_override=model_override,
+                extended_thinking=extended_thinking
             )
         
         await emit_step(job_id, "process", "Processing PDF", "completed", end_time=datetime.utcnow().isoformat())
+        
+        # Check if fallback prompt was used
+        fallback_used = was_fallback_used()
+        if fallback_used:
+            logger.warning(f"[FALLBACK WARNING] Fallback prompt was used for {filename}")
         
         # Step 3: Extract metadata
         await emit_step(job_id, "metadata", "Extracting Metadata", "running", datetime.utcnow().isoformat())
@@ -396,6 +408,7 @@ async def spread_financial_statement(
         metadata["job_id"] = job_id
         metadata["pdf_url"] = f"/api/files/{job_id}_{filename}"
         metadata["doc_type"] = doc_type
+        metadata["fallback_prompt_used"] = fallback_used
         
         # Add auto-detection specific metadata
         if is_auto_mode and isinstance(result, CombinedFinancialExtraction):
@@ -454,6 +467,7 @@ async def _process_single_file(
     max_pages: Optional[int],
     dpi: int,
     model_override: Optional[str],
+    extended_thinking: bool,
     semaphore: asyncio.Semaphore,
     progress_counter: dict,
     progress_lock: asyncio.Lock
@@ -476,6 +490,7 @@ async def _process_single_file(
         max_pages: Maximum pages to process
         dpi: DPI for PDF conversion
         model_override: Optional model override
+        extended_thinking: Enable extended thinking for Anthropic models
         semaphore: Asyncio semaphore for concurrency control
         progress_counter: Shared dict for tracking progress {'completed': int}
         progress_lock: Lock for atomic progress updates
@@ -515,6 +530,9 @@ async def _process_single_file(
             
             await emit_log("debug", f"File saved: {file_path.name}", "api", job_id, filename)
             
+            # Reset fallback flag before processing
+            reset_fallback_flag()
+            
             # Process based on doc_type
             is_auto_mode = doc_type == "auto"
             await emit_log("info", f"Processing {filename} as {doc_type}", "spreader", job_id, filename, {
@@ -527,7 +545,8 @@ async def _process_single_file(
                     pdf_path=str(file_path),
                     max_pages=max_pages,
                     dpi=dpi,
-                    model_override=model_override
+                    model_override=model_override,
+                    extended_thinking=extended_thinking
                 )
             else:
                 # Use asyncio.to_thread to run sync function without blocking
@@ -539,7 +558,8 @@ async def _process_single_file(
                     True,  # multi_period=True
                     max_pages=max_pages,
                     dpi=dpi,
-                    model_override=model_override
+                    model_override=model_override,
+                    extended_thinking=extended_thinking
                 )
             
             result_data = result.model_dump()
@@ -548,6 +568,12 @@ async def _process_single_file(
             metadata["job_id"] = job_id
             metadata["pdf_url"] = f"/api/files/{job_id}_{filename}"
             metadata["doc_type"] = doc_type
+            
+            # Check if fallback prompt was used
+            fallback_used = was_fallback_used()
+            metadata["fallback_prompt_used"] = fallback_used
+            if fallback_used:
+                logger.warning(f"[FALLBACK WARNING] Fallback prompt was used for {filename}")
             
             # Add auto-detection specific metadata
             if is_auto_mode and isinstance(result, CombinedFinancialExtraction):
@@ -613,6 +639,7 @@ async def spread_batch(
     max_pages: Optional[int] = Form(None),
     dpi: int = Form(200),
     model_override: Optional[str] = Form(None),
+    extended_thinking: bool = Form(False),
     parallel: bool = Form(True),
     max_concurrent: int = Form(4)
 ):
@@ -633,6 +660,7 @@ async def spread_batch(
         max_pages: Maximum pages per file
         dpi: DPI for PDF conversion
         model_override: Optional model override (e.g., 'gpt-5', 'gpt-4o')
+        extended_thinking: Enable extended thinking for Anthropic models (default False)
         parallel: If True (default), process files in parallel; if False, sequential
         max_concurrent: Maximum number of concurrent file extractions (default: 4)
         
@@ -704,6 +732,7 @@ async def spread_batch(
                 max_pages=max_pages,
                 dpi=dpi,
                 model_override=model_override,
+                extended_thinking=extended_thinking,
                 semaphore=semaphore,
                 progress_counter=progress_counter,
                 progress_lock=progress_lock
@@ -755,6 +784,7 @@ async def spread_batch(
                 max_pages=max_pages,
                 dpi=dpi,
                 model_override=model_override,
+                extended_thinking=extended_thinking,
                 semaphore=semaphore,
                 progress_counter=progress_counter,
                 progress_lock=progress_lock

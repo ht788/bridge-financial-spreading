@@ -35,28 +35,28 @@ export const MODEL_REGISTRY: ModelDefinition[] = [
   // ANTHROPIC MODELS (Latest - Claude 4.5 Series)
   // =========================================================================
   {
-    id: 'claude-sonnet-4-5',
-    name: 'Claude Sonnet 4.5',
-    provider: 'anthropic',
-    description: 'Balanced performance and speed with excellent vision capabilities',
-    capabilities: ['vision', 'reasoning', 'structured_output'],
-    isDefault: true, // Set as default for best balance
-    supportsReasoningEffort: false, // Anthropic doesn't use reasoning_effort
-    supportsExtendedThinking: true,  // Supports extended thinking
-    recommendedUse: 'General purpose financial spreading with excellent quality',
-    costTier: 'medium'
-  },
-  {
     id: 'claude-opus-4-5',
     name: 'Claude Opus 4.5',
     provider: 'anthropic',
     description: 'Most capable Claude model with superior reasoning and analysis',
     capabilities: ['vision', 'reasoning', 'structured_output'],
-    isDefault: false,
+    isDefault: true, // Set as default for highest accuracy
     supportsReasoningEffort: false, // Anthropic doesn't use reasoning_effort
     supportsExtendedThinking: true,  // Supports extended thinking
     recommendedUse: 'Complex financial documents requiring highest accuracy',
     costTier: 'premium'
+  },
+  {
+    id: 'claude-sonnet-4-5',
+    name: 'Claude Sonnet 4.5',
+    provider: 'anthropic',
+    description: 'Balanced performance and speed with excellent vision capabilities',
+    capabilities: ['vision', 'reasoning', 'structured_output'],
+    isDefault: false,
+    supportsReasoningEffort: false, // Anthropic doesn't use reasoning_effort
+    supportsExtendedThinking: true,  // Supports extended thinking
+    recommendedUse: 'General purpose financial spreading with excellent quality',
+    costTier: 'medium'
   }
 ];
 

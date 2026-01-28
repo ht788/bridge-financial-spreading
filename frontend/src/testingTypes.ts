@@ -142,6 +142,7 @@ export interface TestRunResult {
   execution_time_seconds: number;
   error?: string;
   metadata: Record<string, unknown>;
+  fallback_prompt_used?: boolean;
 }
 
 export interface TestRunSummary {

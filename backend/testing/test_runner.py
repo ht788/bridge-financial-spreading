@@ -44,7 +44,7 @@ project_root = Path(__file__).parent.parent.parent
 if str(project_root) not in sys.path:
     sys.path.insert(0, str(project_root))
 
-from spreader import spread_financials, create_llm, load_from_hub
+from spreader import spread_financials, create_llm, load_from_hub, reset_fallback_flag, was_fallback_used
 from models import MultiPeriodIncomeStatement, MultiPeriodBalanceSheet, CombinedFinancialExtraction
 from model_config import export_for_api, get_all_models
 from period_utils import (
@@ -667,6 +667,7 @@ async def run_test(config: TestRunConfig) -> TestRunResult:
     fields_wrong = 0
     fields_missing = 0
     errors = []
+    fallback_used_in_test = False  # Track if any file used fallback
     
     # Process each file
     for file_idx, test_file in enumerate(company.files, 1):
@@ -696,6 +697,9 @@ async def run_test(config: TestRunConfig) -> TestRunResult:
             
             file_start = time.time()
             
+            # Reset fallback flag before processing
+            reset_fallback_flag()
+            
             # Run the spreader
             result = spread_financials(
                 file_path=str(file_path),
@@ -709,6 +713,11 @@ async def run_test(config: TestRunConfig) -> TestRunResult:
             
             file_duration = time.time() - file_start
             logger.info(f"[TEST RUN {test_id}] ✓ spread_financials() completed in {file_duration:.2f}s")
+            
+            # Check if fallback prompt was used
+            if was_fallback_used():
+                fallback_used_in_test = True
+                logger.warning(f"[TEST RUN {test_id}] ⚠️ Fallback prompt was used for {test_file.filename}")
             
             # Handle combined extraction results (when doc_type='auto')
             if isinstance(result, CombinedFinancialExtraction):
@@ -964,6 +973,7 @@ async def run_test(config: TestRunConfig) -> TestRunResult:
         fields_missing=fields_missing,
         execution_time_seconds=execution_time,
         error="; ".join(errors) if errors else None,
+        fallback_prompt_used=fallback_used_in_test,
         metadata={
             "dpi": config.dpi,
             "max_pages": config.max_pages,

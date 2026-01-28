@@ -87,6 +87,7 @@ class ConnectionManager {
   private isStarted = false;
   private isReconnecting = false;
   private consecutiveFailures = 0;
+  private isPaused = false; // Pauses health checks during active processing
   
   private constructor() {}
   
@@ -214,6 +215,47 @@ class ConnectionManager {
    */
   isConnected(): boolean {
     return this.status.state === 'connected';
+  }
+  
+  /**
+   * Pause health checks - useful during long-running operations like file processing
+   * This prevents misleading "Backend unavailable" messages when the backend is busy
+   */
+  pauseHealthChecks(): void {
+    console.log('[ConnectionManager] Health checks paused (processing in progress)');
+    this.isPaused = true;
+    
+    // Clear any pending health check timer
+    if (this.healthCheckTimer) {
+      clearTimeout(this.healthCheckTimer);
+      this.healthCheckTimer = null;
+    }
+    
+    // Abort any in-progress health check request
+    if (this.abortController) {
+      this.abortController.abort();
+      this.abortController = null;
+    }
+  }
+  
+  /**
+   * Resume health checks after processing completes
+   */
+  resumeHealthChecks(): void {
+    console.log('[ConnectionManager] Health checks resumed');
+    this.isPaused = false;
+    
+    // Immediately check health and schedule next check
+    if (this.isStarted) {
+      this.scheduleHealthCheck();
+    }
+  }
+  
+  /**
+   * Check if health checks are currently paused
+   */
+  isHealthCheckPaused(): boolean {
+    return this.isPaused;
   }
   
   // ==========================================================================
@@ -454,6 +496,12 @@ class ConnectionManager {
   private scheduleHealthCheck(): void {
     if (!this.isStarted) return;
     
+    // Don't schedule health checks if paused (during active processing)
+    if (this.isPaused) {
+      console.log('[ConnectionManager] Health check skipped (paused for processing)');
+      return;
+    }
+    
     if (this.healthCheckTimer) {
       clearTimeout(this.healthCheckTimer);
     }
@@ -463,6 +511,12 @@ class ConnectionManager {
       : this.disconnectedCheckInterval;
     
     this.healthCheckTimer = setTimeout(async () => {
+      // Double-check pause state before executing
+      if (this.isPaused) {
+        console.log('[ConnectionManager] Health check skipped (paused for processing)');
+        return;
+      }
+      
       const httpOk = await this.checkHttpHealth();
       
       // Update state based on health check

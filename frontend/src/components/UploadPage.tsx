@@ -10,6 +10,7 @@ const DEFAULT_MODEL = getDefaultModel();
 
 export interface UploadOptions {
   modelOverride?: string;
+  extendedThinking?: boolean;
 }
 
 interface UploadPageProps {
@@ -29,6 +30,7 @@ export const UploadPage: React.FC<UploadPageProps> = ({
   const [isDragging, setIsDragging] = useState(false);
   const [showAdvanced, setShowAdvanced] = useState(false);
   const [selectedModel, setSelectedModel] = useState(DEFAULT_MODEL.id);
+  const [extendedThinking, setExtendedThinking] = useState(false);
 
   const addFiles = useCallback((newFiles: FileList | File[]) => {
     const fileArray = Array.from(newFiles);
@@ -87,6 +89,8 @@ export const UploadPage: React.FC<UploadPageProps> = ({
       if (selectedModel !== DEFAULT_MODEL.id) {
         options.modelOverride = selectedModel;
       }
+      // Pass extended thinking setting
+      options.extendedThinking = extendedThinking;
       onUpload(files, options);
     }
   };
@@ -243,6 +247,35 @@ export const UploadPage: React.FC<UploadPageProps> = ({
                       </optgroup>
                     ))}
                   </select>
+                </div>
+
+                {/* Extended Thinking Toggle */}
+                <div className="bg-purple-50 border border-purple-200 rounded-xl p-4">
+                  <label className="flex items-center justify-between cursor-pointer">
+                    <div className="flex items-center gap-3">
+                      <div className="flex-shrink-0">
+                        <div className={`w-12 h-6 rounded-full transition-colors ${
+                          extendedThinking ? 'bg-purple-600' : 'bg-gray-300'
+                        }`}>
+                          <div className={`w-5 h-5 bg-white rounded-full shadow-sm transition-transform transform ${
+                            extendedThinking ? 'translate-x-6' : 'translate-x-0.5'
+                          } mt-0.5`} />
+                        </div>
+                      </div>
+                      <div>
+                        <div className="font-medium text-gray-900">Extended Thinking</div>
+                        <div className="text-sm text-gray-600">
+                          Enable deeper reasoning for complex documents (uses more tokens)
+                        </div>
+                      </div>
+                    </div>
+                    <input
+                      type="checkbox"
+                      checked={extendedThinking}
+                      onChange={(e) => setExtendedThinking(e.target.checked)}
+                      className="sr-only"
+                    />
+                  </label>
                 </div>
                 
                 {/* Info Text */}

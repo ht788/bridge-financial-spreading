@@ -169,6 +169,8 @@ export interface SpreadMetadata {
   statement_types_extracted?: string[];
   execution_time_seconds?: number;
   parallel_extraction?: boolean;
+  // Fallback prompt indicator
+  fallback_prompt_used?: boolean;
 }
 
 export interface SpreadResponse {
@@ -188,6 +190,7 @@ export interface SpreadRequest {
   max_pages?: number;
   dpi?: number;
   model_override?: string;
+  extended_thinking?: boolean;
 }
 
 // =============================================================================

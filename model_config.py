@@ -91,23 +91,6 @@ MODEL_REGISTRY: List[ModelDefinition] = [
     # ANTHROPIC MODELS (Latest - Claude 4.5 Series)
     # =========================================================================
     ModelDefinition(
-        id="claude-sonnet-4-5",
-        name="Claude Sonnet 4.5",
-        provider=ModelProvider.ANTHROPIC,
-        description="Balanced performance and speed with excellent vision capabilities",
-        capabilities=[
-            ModelCapability.VISION,
-            ModelCapability.REASONING,
-            ModelCapability.STRUCTURED_OUTPUT
-        ],
-        is_default=True,  # Set as default for best balance
-        supports_reasoning_effort=False,  # Anthropic doesn't use reasoning_effort
-        supports_extended_thinking=True,   # Supports extended thinking
-        recommended_use="General purpose financial spreading with excellent quality",
-        cost_tier="medium"
-    ),
-    
-    ModelDefinition(
         id="claude-opus-4-5",
         name="Claude Opus 4.5",
         provider=ModelProvider.ANTHROPIC,
@@ -117,11 +100,28 @@ MODEL_REGISTRY: List[ModelDefinition] = [
             ModelCapability.REASONING,
             ModelCapability.STRUCTURED_OUTPUT
         ],
-        is_default=False,
+        is_default=True,  # Set as default for highest accuracy
         supports_reasoning_effort=False,  # Anthropic doesn't use reasoning_effort
         supports_extended_thinking=True,   # Supports extended thinking
         recommended_use="Complex financial documents requiring highest accuracy",
         cost_tier="premium"
+    ),
+    
+    ModelDefinition(
+        id="claude-sonnet-4-5",
+        name="Claude Sonnet 4.5",
+        provider=ModelProvider.ANTHROPIC,
+        description="Balanced performance and speed with excellent vision capabilities",
+        capabilities=[
+            ModelCapability.VISION,
+            ModelCapability.REASONING,
+            ModelCapability.STRUCTURED_OUTPUT
+        ],
+        is_default=False,
+        supports_reasoning_effort=False,  # Anthropic doesn't use reasoning_effort
+        supports_extended_thinking=True,   # Supports extended thinking
+        recommended_use="General purpose financial spreading with excellent quality",
+        cost_tier="medium"
     ),
 ]
 

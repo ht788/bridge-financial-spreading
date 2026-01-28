@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { 
   CheckCircle, XCircle, AlertCircle, MinusCircle, 
   ChevronDown, FileText, Clock, Target, BarChart3,
-  Maximize2, Minimize2, Eye
+  Maximize2, Minimize2, Eye, AlertTriangle
 } from 'lucide-react';
 import { PDFViewer } from '../PDFViewer';
 import { API_BASE_URL } from '../../api';
@@ -45,6 +45,21 @@ export const TestResultsComparison: React.FC<TestResultsComparisonProps> = ({ re
 
   return (
     <div className="flex flex-col h-[calc(100vh-140px)]">
+      {/* Fallback Prompt Warning - Fixed position at bottom */}
+      {result.fallback_prompt_used && (
+        <div className="fixed bottom-4 left-4 z-50 bg-amber-50 border border-amber-200 rounded-lg shadow-lg px-4 py-3 max-w-md">
+          <div className="flex items-start gap-3">
+            <AlertTriangle className="w-5 h-5 text-amber-600 flex-shrink-0 mt-0.5" />
+            <div className="flex-1 min-w-0">
+              <p className="text-sm font-medium text-amber-900">Fallback Prompt Used</p>
+              <p className="text-xs text-amber-700 mt-1">
+                The Hub prompt system message could not be extracted. A basic fallback prompt was used instead.
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
+      
       {/* Summary Header - Compact */}
       <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden flex-shrink-0 mb-4">
         <div className={`px-4 py-3 ${

@@ -2,7 +2,7 @@
  * Utility functions
  */
 
-import { LineItem } from './types';
+import { LineItem, CombinedFinancialExtraction, MultiPeriodFinancialStatement, SpreadMetadata } from './types';
 
 /**
  * Format a number as currency
@@ -275,5 +275,32 @@ export function exportToCSV(data: any, filename: string, metadata?: any): void {
     link.download = filename;
     link.click();
     URL.revokeObjectURL(url);
+  }
+}
+
+/**
+ * Export combined extraction data (from auto-detect mode) to CSV files
+ * Creates separate CSV files for Income Statement and Balance Sheet
+ */
+export function exportCombinedToCSV(
+  data: CombinedFinancialExtraction,
+  baseFilename: string,
+  metadata?: SpreadMetadata
+): void {
+  // Export Income Statement if available
+  if (data.income_statement) {
+    const incomeFilename = `${baseFilename}_income_statement.csv`;
+    exportToCSV(data.income_statement, incomeFilename, metadata);
+  }
+  
+  // Export Balance Sheet if available
+  if (data.balance_sheet) {
+    const balanceFilename = `${baseFilename}_balance_sheet.csv`;
+    exportToCSV(data.balance_sheet, balanceFilename, metadata);
+  }
+  
+  // If neither statement is available, show an alert
+  if (!data.income_statement && !data.balance_sheet) {
+    alert('No financial statements available to export.');
   }
 }

@@ -10,7 +10,7 @@ import {
   isMultiPeriod,
   isCombinedExtraction 
 } from '../types';
-import { ArrowLeft, CheckCircle, AlertCircle, Layers, FileText, Wallet, Zap } from 'lucide-react';
+import { ArrowLeft, CheckCircle, AlertCircle, Layers, FileText, Wallet, Zap, AlertTriangle } from 'lucide-react';
 
 interface SpreadingViewProps {
   data: FinancialStatement | MultiPeriodFinancialStatement | CombinedFinancialExtraction;
@@ -78,6 +78,21 @@ export const SpreadingView: React.FC<SpreadingViewProps> = ({
 
   return (
     <div className={hideBackButton ? "flex flex-col" : "flex flex-col h-screen"}>
+      {/* Fallback Prompt Warning - Fixed position at bottom */}
+      {metadata.fallback_prompt_used && (
+        <div className="fixed bottom-4 left-4 z-50 bg-amber-50 border border-amber-200 rounded-lg shadow-lg px-4 py-3 max-w-md">
+          <div className="flex items-start gap-3">
+            <AlertTriangle className="w-5 h-5 text-amber-600 flex-shrink-0 mt-0.5" />
+            <div className="flex-1 min-w-0">
+              <p className="text-sm font-medium text-amber-900">Fallback Prompt Used</p>
+              <p className="text-xs text-amber-700 mt-1">
+                The Hub prompt system message could not be extracted. A basic fallback prompt was used instead.
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
+      
       {/* Top Bar */}
       <div className="bg-white border-b border-gray-200 px-6 py-4 rounded-t-xl">
         <div className="flex items-center justify-between">
@@ -158,7 +173,12 @@ export const SpreadingView: React.FC<SpreadingViewProps> = ({
             <div className="h-6 w-px bg-gray-300" />
 
             {displayData && (
-              <ExportMenu data={displayData} metadata={metadata} docType={effectiveDocType} />
+              <ExportMenu 
+                data={displayData} 
+                metadata={metadata} 
+                docType={effectiveDocType}
+                fullData={isCombined ? combinedData || undefined : undefined}
+              />
             )}
           </div>
         </div>

@@ -50,6 +50,10 @@ export const api = {
     if (request.model_override !== undefined) {
       formData.append('model_override', request.model_override);
     }
+    
+    if (request.extended_thinking !== undefined) {
+      formData.append('extended_thinking', String(request.extended_thinking));
+    }
 
     const response = await apiClient.post<SpreadResponse>('/spread', formData, {
       headers: {
@@ -71,6 +75,7 @@ export const api = {
     max_pages?: number;
     dpi?: number;
     model_override?: string;
+    extended_thinking?: boolean;
     parallel?: boolean;  // Default: true - process files in parallel
     max_concurrent?: number;  // Default: 4 - max concurrent file extractions
   }): Promise<BatchSpreadResponse> {
@@ -97,6 +102,9 @@ export const api = {
     }
     if (options?.model_override !== undefined) {
       formData.append('model_override', options.model_override);
+    }
+    if (options?.extended_thinking !== undefined) {
+      formData.append('extended_thinking', String(options.extended_thinking));
     }
     // Parallel processing options (both default to optimal values on backend)
     if (options?.parallel !== undefined) {
