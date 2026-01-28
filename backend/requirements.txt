@@ -1,0 +1,23 @@
+# Backend-specific dependencies for FastAPI server
+# ================================================
+# Install with: pip install -r backend/requirements.txt
+#
+# Note: This assumes the parent requirements.txt is already installed
+# (langsmith, langchain, openai, pydantic, etc.)
+
+# =============================================================================
+# WEB FRAMEWORK
+# =============================================================================
+fastapi>=0.104.0
+uvicorn[standard]>=0.24.0
+
+# =============================================================================
+# FILE HANDLING
+# =============================================================================
+python-multipart>=0.0.6
+aiofiles>=23.0.0
+
+# =============================================================================
+# WEBSOCKETS (included with uvicorn[standard] but explicit for clarity)
+# =============================================================================
+websockets>=12.0

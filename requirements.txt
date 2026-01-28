@@ -1,0 +1,56 @@
+# Financial Statement Spreader - Dependencies
+# ============================================
+# Install with: pip install -r requirements.txt
+
+# =============================================================================
+# LANGSMITH & LANGCHAIN ECOSYSTEM (Required for LLMOps)
+# =============================================================================
+# LangSmith SDK - enables @traceable decorator and automatic tracing
+langsmith>=0.1.140
+
+# LangChain Core - provides base abstractions (Runnables, Messages, etc.)
+langchain-core>=0.3.0
+
+# LangChain OpenAI - ChatOpenAI with automatic LangSmith integration
+langchain-openai>=0.2.0
+
+# LangChain Hub - pull prompts remotely
+langchainhub>=0.1.20
+
+# =============================================================================
+# OPENAI SDK
+# =============================================================================
+openai>=1.50.0
+
+# =============================================================================
+# PDF PROCESSING - Vision-first approach (NO text extraction!)
+# =============================================================================
+# PyMuPDF (recommended) - no external dependencies required
+pymupdf>=1.24.0
+
+# Alternative: pdf2image (requires Poppler installed on system)
+# Install Poppler:
+#   Mac: brew install poppler
+#   Windows: https://github.com/oschwartz10612/poppler-windows/releases
+#   Linux: apt-get install poppler-utils
+pdf2image>=1.17.0
+
+# Image processing (required for resizing)
+Pillow>=10.0.0
+
+# =============================================================================
+# EXCEL SUPPORT (future enhancement)
+# =============================================================================
+pandas>=2.0.0
+openpyxl>=3.1.0
+
+# =============================================================================
+# DATA VALIDATION
+# =============================================================================
+pydantic>=2.5.0
+
+# =============================================================================
+# ENVIRONMENT & UTILITIES
+# =============================================================================
+python-dotenv>=1.0.0
+rich>=13.0.0

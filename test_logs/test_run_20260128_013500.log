@@ -1,0 +1,17 @@
+{"timestamp": "2026-01-28T01:35:00.421593Z", "level": "INFO", "message": "================================================================================"}
+{"timestamp": "2026-01-28T01:35:00.423253Z", "level": "INFO", "message": "FINANCIAL SPREADING TEST SUITE - BROWSER AUTOMATION"}
+{"timestamp": "2026-01-28T01:35:00.424816Z", "level": "INFO", "message": "================================================================================"}
+{"timestamp": "2026-01-28T01:35:00.425451Z", "level": "INFO", "message": "Timestamp: 20260128_013500"}
+{"timestamp": "2026-01-28T01:35:00.426085Z", "level": "INFO", "message": "Backend URL: http://localhost:8000"}
+{"timestamp": "2026-01-28T01:35:00.429146Z", "level": "INFO", "message": "Frontend URL: http://localhost:5173"}
+{"timestamp": "2026-01-28T01:35:00.429923Z", "level": "INFO", "message": "Example Directory: example_financials"}
+{"timestamp": "2026-01-28T01:35:00.430414Z", "level": "INFO", "message": "================================================================================"}
+{"timestamp": "2026-01-28T01:35:00.431256Z", "level": "INFO", "message": "Scanning for example PDFs..."}
+{"timestamp": "2026-01-28T01:35:00.433552Z", "level": "INFO", "message": "Found 2 PDF file(s)"}
+{"timestamp": "2026-01-28T01:35:00.434283Z", "level": "DEBUG", "message": "  - FOMIN+LLC_Balance+Sheet--.pdf (54366 bytes)"}
+{"timestamp": "2026-01-28T01:35:00.434810Z", "level": "DEBUG", "message": "  - FOMIN+LLC_Profit+and+Loss--.pdf (55740 bytes)"}
+{"timestamp": "2026-01-28T01:35:00.435216Z", "level": "INFO", "message": "\n================================================================================"}
+{"timestamp": "2026-01-28T01:35:00.435591Z", "level": "INFO", "message": "TEST 1: Backend Health Check"}
+{"timestamp": "2026-01-28T01:35:00.436041Z", "level": "INFO", "message": "================================================================================"}
+{"timestamp": "2026-01-28T01:35:00.945531Z", "level": "INFO", "message": "Testing backend health check..."}
+{"timestamp": "2026-01-28T01:35:03.013392Z", "level": "ERROR", "message": "Backend health check failed: 404", "response": "{\"detail\":\"Not Found\"}"}
