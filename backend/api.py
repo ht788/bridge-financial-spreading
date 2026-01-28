@@ -25,8 +25,37 @@ from pydantic import BaseModel
 import sys
 sys.path.append(str(Path(__file__).parent.parent))
 
-from spreader import spread_financials, spread_pdf
-from models import IncomeStatement, BalanceSheet
+from spreader import spread_financials, spread_pdf, spread_pdf_combined
+from models import IncomeStatement, BalanceSheet, CombinedFinancialExtraction
+
+# Import testing module
+try:
+    from backend.testing.test_runner import (
+        run_test, get_test_history, get_test_result_by_id,
+        get_test_companies, get_available_models, get_current_prompt_content,
+        load_answer_key, save_answer_key
+    )
+    from backend.testing.test_models import (
+        TestRunConfig, TestRunResult, TestHistoryResponse,
+        TestingStatusResponse, CompanyAnswerKey
+    )
+    TESTING_ENABLED = True
+except ImportError:
+    # Try relative import for when running from backend directory
+    try:
+        from testing.test_runner import (
+            run_test, get_test_history, get_test_result_by_id,
+            get_test_companies, get_available_models, get_current_prompt_content,
+            load_answer_key, save_answer_key
+        )
+        from testing.test_models import (
+            TestRunConfig, TestRunResult, TestHistoryResponse,
+            TestingStatusResponse, CompanyAnswerKey
+        )
+        TESTING_ENABLED = True
+    except ImportError as e:
+        logger.warning(f"Testing module not available: {e}")
+        TESTING_ENABLED = False
 
 # Configure logging with custom handler for WebSocket broadcasting
 logging.basicConfig(level=logging.INFO)
@@ -57,6 +86,9 @@ except Exception as e:
     import tempfile
     UPLOAD_DIR = Path(tempfile.gettempdir()) / "bridge_financial_spreader_uploads"
     UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
+
+# Define example financials directory
+EXAMPLE_FINANCIALS_DIR = Path(__file__).resolve().parent.parent / "example_financials"
 
 # Store for active WebSocket connections
 active_connections: list[WebSocket] = []
@@ -247,10 +279,11 @@ async def get_logs(limit: int = 100):
 @app.post("/api/spread", response_model=SpreadResponse)
 async def spread_financial_statement(
     file: UploadFile = File(...),
-    doc_type: str = Form(...),
+    doc_type: str = Form("auto"),
     period: str = Form("Latest"),
     max_pages: Optional[int] = Form(None),
-    dpi: int = Form(200)
+    dpi: int = Form(200),
+    model_override: Optional[str] = Form(None)
 ):
     """
     Upload and process a financial statement PDF.
@@ -260,13 +293,16 @@ async def spread_financial_statement(
     
     Args:
         file: PDF file upload
-        doc_type: Type of document ('income' or 'balance')
+        doc_type: Type of document ('income', 'balance', or 'auto' for auto-detection)
         period: Fiscal period to extract
         max_pages: Maximum pages to process
         dpi: DPI for PDF image conversion
+        model_override: Optional model override (e.g., 'gpt-5', 'gpt-4o')
         
     Returns:
         SpreadResponse with extracted financial data
+        - For doc_type='auto': Returns combined results with income_statement and/or balance_sheet
+        - For specific doc_type: Returns single statement type with periods
     """
     job_id = str(uuid.uuid4())
     filename = file.filename or "unknown.pdf"
@@ -281,12 +317,12 @@ async def spread_financial_statement(
             detail="Only PDF files are supported"
         )
     
-    # Validate doc_type
-    if doc_type not in ['income', 'balance']:
+    # Validate doc_type - now supports 'auto'
+    if doc_type not in ['income', 'balance', 'auto']:
         await emit_log("error", f"Invalid doc_type: {doc_type}", "api", job_id, filename)
         raise HTTPException(
             status_code=400,
-            detail="doc_type must be 'income' or 'balance'"
+            detail="doc_type must be 'income', 'balance', or 'auto'"
         )
     
     try:
@@ -306,28 +342,45 @@ async def spread_financial_statement(
         
         # Step 2: Process PDF
         await emit_step(job_id, "process", "Processing PDF", "running", datetime.utcnow().isoformat())
+        
+        is_auto_mode = doc_type == "auto"
         await emit_log("info", f"Starting PDF processing with doc_type={doc_type}", "spreader", job_id, filename, {
             "doc_type": doc_type,
             "period": period,
             "max_pages": max_pages,
             "dpi": dpi,
-            "prompt_source": "langsmith_hub"
+            "model_override": model_override,
+            "prompt_source": "langsmith_hub",
+            "auto_detect_mode": is_auto_mode
         })
         
         # Broadcast progress via WebSocket
-        await broadcast_progress(job_id, "processing", "Processing PDF...")
+        if is_auto_mode:
+            await broadcast_progress(job_id, "processing", "Detecting statement types and processing PDF...")
+        else:
+            await broadcast_progress(job_id, "processing", "Processing PDF...")
         
         # Process the file using vision-first spreader with reasoning loop
         # Prompts are loaded from LangSmith Hub (fail-fast if unavailable)
-        # Enable multi-period mode to extract all periods in the document
-        result = spread_financials(
-            file_path=str(file_path),
-            doc_type=doc_type,
-            period=period,
-            multi_period=True,  # Extract all periods for side-by-side comparison
-            max_pages=max_pages,
-            dpi=dpi
-        )
+        if is_auto_mode:
+            # Use async combined extraction with auto-detection
+            result = await spread_pdf_combined(
+                pdf_path=str(file_path),
+                max_pages=max_pages,
+                dpi=dpi,
+                model_override=model_override
+            )
+        else:
+            # Enable multi-period mode to extract all periods in the document
+            result = spread_financials(
+                file_path=str(file_path),
+                doc_type=doc_type,
+                period=period,
+                multi_period=True,  # Extract all periods for side-by-side comparison
+                max_pages=max_pages,
+                dpi=dpi,
+                model_override=model_override
+            )
         
         await emit_step(job_id, "process", "Processing PDF", "completed", end_time=datetime.utcnow().isoformat())
         
@@ -342,11 +395,23 @@ async def spread_financial_statement(
         metadata["original_filename"] = filename
         metadata["job_id"] = job_id
         metadata["pdf_url"] = f"/api/files/{job_id}_{filename}"
+        metadata["doc_type"] = doc_type
+        
+        # Add auto-detection specific metadata
+        if is_auto_mode and isinstance(result, CombinedFinancialExtraction):
+            metadata["is_combined"] = True
+            metadata["detected_income_statement"] = result.detected_types.has_income_statement
+            metadata["detected_balance_sheet"] = result.detected_types.has_balance_sheet
+            metadata["statement_types_extracted"] = result.statement_types_extracted
+            if result.extraction_metadata:
+                metadata["execution_time_seconds"] = result.extraction_metadata.get("execution_time_seconds")
+                metadata["parallel_extraction"] = result.extraction_metadata.get("parallel_extraction", False)
         
         await emit_log("info", "Extraction complete", "spreader", job_id, filename, {
             "total_fields": metadata.get("total_fields"),
             "high_confidence": metadata.get("high_confidence"),
-            "extraction_rate": metadata.get("extraction_rate")
+            "extraction_rate": metadata.get("extraction_rate"),
+            "is_combined": metadata.get("is_combined", False)
         })
         await emit_step(job_id, "metadata", "Extracting Metadata", "completed", end_time=datetime.utcnow().isoformat())
         
@@ -383,7 +448,8 @@ async def spread_batch(
     doc_types: str = Form(...),  # JSON array string
     period: str = Form("Latest"),
     max_pages: Optional[int] = Form(None),
-    dpi: int = Form(200)
+    dpi: int = Form(200),
+    model_override: Optional[str] = Form(None)
 ):
     """
     Upload and process multiple financial statement PDFs.
@@ -397,6 +463,7 @@ async def spread_batch(
         period: Fiscal period to extract
         max_pages: Maximum pages per file
         dpi: DPI for PDF conversion
+        model_override: Optional model override (e.g., 'gpt-5', 'gpt-4o')
         
     Returns:
         BatchSpreadResponse with results for each file
@@ -477,7 +544,8 @@ async def spread_batch(
                 period=period,
                 multi_period=True,  # Extract all periods for side-by-side comparison
                 max_pages=max_pages,
-                dpi=dpi
+                dpi=dpi,
+                model_override=model_override
             )
             
             result_data = result.model_dump()
@@ -564,6 +632,26 @@ async def get_file(filename: str):
     )
 
 
+@app.get("/api/testing/files/{filename}")
+async def get_test_file(filename: str):
+    """
+    Serve example financial files for testing.
+    """
+    file_path = EXAMPLE_FINANCIALS_DIR / filename
+    
+    if not file_path.exists():
+        # Fallback to uploads if not found in examples (in case it was uploaded manually)
+        file_path = UPLOAD_DIR / filename
+        if not file_path.exists():
+             raise HTTPException(status_code=404, detail="File not found")
+    
+    return FileResponse(
+        file_path,
+        media_type="application/pdf",
+        filename=filename
+    )
+
+
 @app.websocket("/ws/progress")
 async def websocket_endpoint(websocket: WebSocket):
     """
@@ -572,10 +660,12 @@ async def websocket_endpoint(websocket: WebSocket):
     await websocket.accept()
     active_connections.append(websocket)
     
+    logger.info("[WEBSOCKET] Client connected")
     await emit_log("debug", "WebSocket client connected", "websocket")
     
     # Send recent logs on connect
     recent_logs = list(log_buffer)[-50:]
+    logger.info(f"[WEBSOCKET] Sending {len(recent_logs)} recent logs to client")
     for log in recent_logs:
         try:
             await websocket.send_json({
@@ -584,20 +674,37 @@ async def websocket_endpoint(websocket: WebSocket):
                 "timestamp": log.get("timestamp"),
                 "payload": log
             })
-        except Exception:
-            pass
+        except Exception as e:
+            logger.warning(f"[WEBSOCKET] Failed to send initial log: {e}")
+            break
     
     try:
         while True:
             # Keep connection alive and handle client messages
-            data = await websocket.receive_text()
-            
-            # Handle ping/pong
-            if data == "ping":
-                await websocket.send_text("pong")
+            try:
+                data = await websocket.receive_text()
+                
+                # Handle ping/pong
+                if data == "ping":
+                    await websocket.send_text("pong")
+                    logger.debug("[WEBSOCKET] Ping/pong")
+                    
+            except RuntimeError as e:
+                # WebSocket was closed/disconnected
+                logger.info(f"[WEBSOCKET] Connection closed: {e}")
+                break
+            except Exception as e:
+                logger.error(f"[WEBSOCKET] Error receiving message: {e}")
+                break
                 
     except WebSocketDisconnect:
-        active_connections.remove(websocket)
+        logger.info("[WEBSOCKET] Client disconnected normally")
+    except Exception as e:
+        logger.error(f"[WEBSOCKET] Unexpected error: {e}")
+    finally:
+        if websocket in active_connections:
+            active_connections.remove(websocket)
+            logger.info("[WEBSOCKET] Client removed from active connections")
         await emit_log("debug", "WebSocket client disconnected", "websocket")
 
 
@@ -605,27 +712,15 @@ async def websocket_endpoint(websocket: WebSocket):
 # HELPER FUNCTIONS
 # =============================================================================
 
-def calculate_extraction_metadata(data: Dict[str, Any]) -> Dict[str, Any]:
-    """
-    Calculate metadata about the extraction quality.
-    
-    Supports both single-period and multi-period data structures.
-    
-    Args:
-        data: Extracted financial data (single or multi-period)
-        
-    Returns:
-        Dictionary with metadata statistics
-    """
+def _count_fields_in_multi_period(data: Dict[str, Any]) -> tuple:
+    """Helper to count fields in multi-period data structure."""
     high_confidence_count = 0
     medium_confidence_count = 0
     low_confidence_count = 0
     missing_count = 0
     total_fields = 0
     
-    # Check if this is multi-period data
     if "periods" in data and isinstance(data["periods"], list):
-        # Multi-period: aggregate stats across all periods
         for period in data["periods"]:
             period_data = period.get("data", {})
             for field_name, field_value in period_data.items():
@@ -640,6 +735,50 @@ def calculate_extraction_metadata(data: Dict[str, Any]) -> Dict[str, Any]:
                         medium_confidence_count += 1
                     else:
                         low_confidence_count += 1
+    
+    return high_confidence_count, medium_confidence_count, low_confidence_count, missing_count, total_fields
+
+
+def calculate_extraction_metadata(data: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    Calculate metadata about the extraction quality.
+    
+    Supports single-period, multi-period, and combined data structures.
+    
+    Args:
+        data: Extracted financial data (single, multi-period, or combined)
+        
+    Returns:
+        Dictionary with metadata statistics
+    """
+    high_confidence_count = 0
+    medium_confidence_count = 0
+    low_confidence_count = 0
+    missing_count = 0
+    total_fields = 0
+    
+    # Check if this is combined extraction data (from auto-detect mode)
+    if "income_statement" in data or "balance_sheet" in data:
+        # Combined extraction: aggregate stats from both statement types
+        for statement_key in ["income_statement", "balance_sheet"]:
+            statement_data = data.get(statement_key)
+            if statement_data and isinstance(statement_data, dict):
+                h, m, l, miss, total = _count_fields_in_multi_period(statement_data)
+                high_confidence_count += h
+                medium_confidence_count += m
+                low_confidence_count += l
+                missing_count += miss
+                total_fields += total
+    
+    # Check if this is multi-period data
+    elif "periods" in data and isinstance(data["periods"], list):
+        # Multi-period: aggregate stats across all periods
+        h, m, l, miss, total = _count_fields_in_multi_period(data)
+        high_confidence_count += h
+        medium_confidence_count += m
+        low_confidence_count += l
+        missing_count += miss
+        total_fields += total
     else:
         # Single-period: original logic
         for field_name, field_value in data.items():
@@ -666,22 +805,37 @@ def calculate_extraction_metadata(data: Dict[str, Any]) -> Dict[str, Any]:
     }
 
 
-def calculate_average_confidence(data: Dict[str, Any]) -> float:
-    """Calculate average confidence score across all fields.
-    
-    Supports both single-period and multi-period data structures.
-    """
+def _collect_confidences_from_multi_period(data: Dict[str, Any]) -> List[float]:
+    """Helper to collect confidence scores from multi-period data."""
     confidences = []
-    
-    # Check if this is multi-period data
     if "periods" in data and isinstance(data["periods"], list):
-        # Multi-period: aggregate confidences across all periods
         for period in data["periods"]:
             period_data = period.get("data", {})
             for field_value in period_data.values():
                 if isinstance(field_value, dict) and "confidence" in field_value and "value" in field_value:
                     if field_value["value"] is not None:
                         confidences.append(field_value["confidence"])
+    return confidences
+
+
+def calculate_average_confidence(data: Dict[str, Any]) -> float:
+    """Calculate average confidence score across all fields.
+    
+    Supports single-period, multi-period, and combined data structures.
+    """
+    confidences = []
+    
+    # Check if this is combined extraction data (from auto-detect mode)
+    if "income_statement" in data or "balance_sheet" in data:
+        # Combined extraction: aggregate confidences from both statement types
+        for statement_key in ["income_statement", "balance_sheet"]:
+            statement_data = data.get(statement_key)
+            if statement_data and isinstance(statement_data, dict):
+                confidences.extend(_collect_confidences_from_multi_period(statement_data))
+    
+    # Check if this is multi-period data
+    elif "periods" in data and isinstance(data["periods"], list):
+        confidences.extend(_collect_confidences_from_multi_period(data))
     else:
         # Single-period: original logic
         for field_value in data.values():
@@ -698,15 +852,21 @@ async def broadcast_message(message: dict):
     
     for connection in active_connections:
         try:
+            # Check if connection is still active before sending
             await connection.send_json(message)
+        except RuntimeError as e:
+            # WebSocket is closed or not connected
+            logger.debug(f"[BROADCAST] WebSocket closed: {e}")
+            disconnected.append(connection)
         except Exception as e:
-            logger.error(f"Error broadcasting to WebSocket: {e}")
+            logger.error(f"[BROADCAST] Error sending to WebSocket: {e}")
             disconnected.append(connection)
     
     # Clean up disconnected connections
     for conn in disconnected:
         if conn in active_connections:
             active_connections.remove(conn)
+            logger.info("[BROADCAST] Removed disconnected client")
 
 
 async def broadcast_progress(job_id: str, status: str, message: str):
@@ -720,6 +880,191 @@ async def broadcast_progress(job_id: str, status: str, message: str):
             "message": message
         }
     })
+
+
+# =============================================================================
+# STARTUP/SHUTDOWN EVENTS
+# =============================================================================
+
+# =============================================================================
+# TESTING API ENDPOINTS
+# =============================================================================
+
+@app.get("/api/testing/status")
+async def get_testing_status():
+    """
+    Get testing system status including available companies and models.
+    """
+    if not TESTING_ENABLED:
+        raise HTTPException(status_code=503, detail="Testing module not available")
+    
+    try:
+        companies = get_test_companies()
+        models = get_available_models()
+        
+        # Try to get prompt content, but don't fail if LangSmith isn't configured
+        prompt_content = None
+        try:
+            prompt_content = get_current_prompt_content("income")
+        except Exception as prompt_err:
+            logger.warning(f"Could not get prompt content: {prompt_err}")
+        
+        return TestingStatusResponse(
+            available_companies=companies,
+            available_models=models,
+            current_prompt_content=prompt_content
+        )
+    except Exception as e:
+        logger.error(f"Error getting testing status: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/api/testing/run")
+async def run_test_endpoint(config: dict):
+    """
+    Execute a test run for the specified company with the given configuration.
+    
+    This endpoint runs the spreader against all test files for the company,
+    compares results to the answer key, and returns detailed grading.
+    """
+    if not TESTING_ENABLED:
+        await emit_log("error", "Testing module not available", "testing")
+        raise HTTPException(status_code=503, detail="Testing module not available")
+    
+    try:
+        # Parse config
+        test_config = TestRunConfig(**config)
+        
+        await emit_log("info", f"[TEST RUN START] Company: {test_config.company_id}, Model: {test_config.model_name}", 
+                      "testing", details={
+                          "company_id": test_config.company_id,
+                          "model": test_config.model_name,
+                          "dpi": test_config.dpi,
+                          "max_pages": test_config.max_pages,
+                          "tolerance": test_config.tolerance_percent,
+                          "has_prompt_override": bool(test_config.prompt_override)
+                      })
+        
+        await emit_log("info", "[TEST RUN] Calling run_test function...", "testing")
+        
+        result = await run_test(test_config)
+        
+        await emit_log("info", 
+            f"[TEST RUN COMPLETE] Score: {result.overall_score:.1f}% ({result.overall_grade.value}), Files: {result.total_files}, Periods: {result.total_periods}, Time: {result.execution_time_seconds:.2f}s",
+            "testing",
+            job_id=result.id,
+            details={
+                "score": result.overall_score,
+                "grade": result.overall_grade.value,
+                "total_files": result.total_files,
+                "total_periods": result.total_periods,
+                "fields_correct": result.fields_correct,
+                "fields_wrong": result.fields_wrong,
+                "fields_missing": result.fields_missing,
+                "execution_time": result.execution_time_seconds
+            }
+        )
+        
+        return result
+    except HTTPException:
+        raise
+    except Exception as e:
+        error_trace = traceback.format_exc()
+        logger.error(f"[TEST RUN FAILED] {e}\n{error_trace}")
+        await emit_log("error", f"[TEST RUN FAILED] {str(e)}", "testing", stack_trace=error_trace)
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/testing/history")
+async def get_testing_history(limit: int = 50, company_id: Optional[str] = None):
+    """
+    Get test run history.
+    
+    Args:
+        limit: Maximum number of records to return
+        company_id: Optional filter by company
+    """
+    if not TESTING_ENABLED:
+        raise HTTPException(status_code=503, detail="Testing module not available")
+    
+    try:
+        return get_test_history(limit=limit, company_id=company_id)
+    except Exception as e:
+        logger.error(f"Error getting test history: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/testing/result/{test_id}")
+async def get_test_result(test_id: str):
+    """
+    Get detailed results for a specific test run.
+    """
+    if not TESTING_ENABLED:
+        raise HTTPException(status_code=503, detail="Testing module not available")
+    
+    try:
+        result = get_test_result_by_id(test_id)
+        if not result:
+            raise HTTPException(status_code=404, detail="Test result not found")
+        return result
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error getting test result: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/testing/answer-key/{company_id}")
+async def get_answer_key(company_id: str):
+    """
+    Get the answer key for a specific company.
+    """
+    if not TESTING_ENABLED:
+        raise HTTPException(status_code=503, detail="Testing module not available")
+    
+    try:
+        answer_key = load_answer_key(company_id)
+        if not answer_key:
+            raise HTTPException(status_code=404, detail="Answer key not found")
+        return answer_key
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error loading answer key: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.put("/api/testing/answer-key")
+async def update_answer_key(answer_key: dict):
+    """
+    Update the answer key for a company.
+    """
+    if not TESTING_ENABLED:
+        raise HTTPException(status_code=503, detail="Testing module not available")
+    
+    try:
+        parsed_key = CompanyAnswerKey(**answer_key)
+        save_answer_key(parsed_key)
+        return {"success": True, "message": "Answer key saved"}
+    except Exception as e:
+        logger.error(f"Error saving answer key: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/testing/prompt/{doc_type}")
+async def get_prompt_content(doc_type: str):
+    """
+    Get the current prompt content from LangSmith Hub.
+    """
+    if not TESTING_ENABLED:
+        raise HTTPException(status_code=503, detail="Testing module not available")
+    
+    try:
+        content = get_current_prompt_content(doc_type)
+        return {"doc_type": doc_type, "content": content}
+    except Exception as e:
+        logger.error(f"Error getting prompt content: {e}")
+        return {"doc_type": doc_type, "content": None, "error": str(e)}
 
 
 # =============================================================================

@@ -13,7 +13,7 @@ Architecture Decision:
   3. Clear boundaries between "what to extract" (prompts) and "what shape" (models)
 """
 
-from typing import Optional, List
+from typing import Optional, List, Dict, Any
 from pydantic import BaseModel, Field
 
 
@@ -527,6 +527,97 @@ class MultiPeriodBalanceSheet(BaseModel):
     def num_periods(self) -> int:
         """Get number of periods."""
         return len(self.periods)
+
+
+# =============================================================================
+# STATEMENT TYPE DETECTION (Auto-Detection)
+# =============================================================================
+
+class StatementTypeDetection(BaseModel):
+    """
+    Result of automatic statement type detection from a financial document.
+    
+    This model captures which types of financial statements are present
+    in a document, enabling automatic routing to the correct extraction pipeline.
+    """
+    has_income_statement: bool = Field(
+        default=False,
+        description="True if an income statement (P&L) is detected in the document"
+    )
+    has_balance_sheet: bool = Field(
+        default=False,
+        description="True if a balance sheet is detected in the document"
+    )
+    income_statement_pages: List[int] = Field(
+        default_factory=list,
+        description="1-indexed page numbers where income statement data is found"
+    )
+    balance_sheet_pages: List[int] = Field(
+        default_factory=list,
+        description="1-indexed page numbers where balance sheet data is found"
+    )
+    confidence: float = Field(
+        default=0.0,
+        ge=0.0,
+        le=1.0,
+        description="Overall confidence in the detection (0.0-1.0)"
+    )
+    income_statement_confidence: float = Field(
+        default=0.0,
+        ge=0.0,
+        le=1.0,
+        description="Confidence specifically for income statement detection"
+    )
+    balance_sheet_confidence: float = Field(
+        default=0.0,
+        ge=0.0,
+        le=1.0,
+        description="Confidence specifically for balance sheet detection"
+    )
+    notes: Optional[str] = Field(
+        default=None,
+        description="Additional notes about the detection (e.g., assumptions made, ambiguities)"
+    )
+
+
+class CombinedFinancialExtraction(BaseModel):
+    """
+    Combined extraction result when a document contains both income statement
+    and balance sheet data.
+    
+    This model enables parallel extraction of both statement types from a
+    single document upload, improving efficiency for financial packets.
+    """
+    income_statement: Optional[MultiPeriodIncomeStatement] = Field(
+        default=None,
+        description="Extracted income statement data (if present in document)"
+    )
+    balance_sheet: Optional[MultiPeriodBalanceSheet] = Field(
+        default=None,
+        description="Extracted balance sheet data (if present in document)"
+    )
+    detected_types: StatementTypeDetection = Field(
+        description="Detection results indicating which statement types were found"
+    )
+    extraction_metadata: dict = Field(
+        default_factory=dict,
+        description="Metadata about the extraction process (timing, model used, etc.)"
+    )
+    
+    @property
+    def has_both_statements(self) -> bool:
+        """Check if both statement types were extracted."""
+        return self.income_statement is not None and self.balance_sheet is not None
+    
+    @property
+    def statement_types_extracted(self) -> List[str]:
+        """Get list of statement types that were successfully extracted."""
+        types = []
+        if self.income_statement is not None:
+            types.append("income")
+        if self.balance_sheet is not None:
+            types.append("balance")
+        return types
 
 
 # =============================================================================

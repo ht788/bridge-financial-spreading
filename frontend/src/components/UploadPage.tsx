@@ -1,10 +1,19 @@
 import React, { useState, useCallback } from 'react';
-import { Upload, FileText, Loader2, X, Plus, ChevronDown, ChevronUp } from 'lucide-react';
+import { Upload, FileText, Loader2, X, Plus, ChevronDown, ChevronUp, Cpu } from 'lucide-react';
 import clsx from 'clsx';
 import { DocType, FileUploadItem } from '../types';
+import { getAllModels, getDefaultModel, getGroupedModels, getModelDisplayInfo } from '../modelConfig';
+
+// Get models from centralized config
+const AVAILABLE_MODELS = getAllModels();
+const DEFAULT_MODEL = getDefaultModel();
+
+export interface UploadOptions {
+  modelOverride?: string;
+}
 
 interface UploadPageProps {
-  onUpload: (files: FileUploadItem[]) => void;
+  onUpload: (files: FileUploadItem[], options?: UploadOptions) => void;
   isProcessing: boolean;
   processingFiles?: FileUploadItem[];
 }
@@ -19,6 +28,7 @@ export const UploadPage: React.FC<UploadPageProps> = ({
   const [files, setFiles] = useState<FileUploadItem[]>([]);
   const [isDragging, setIsDragging] = useState(false);
   const [showAdvanced, setShowAdvanced] = useState(false);
+  const [selectedModel, setSelectedModel] = useState(DEFAULT_MODEL.id);
 
   const addFiles = useCallback((newFiles: FileList | File[]) => {
     const fileArray = Array.from(newFiles);
@@ -37,10 +47,15 @@ export const UploadPage: React.FC<UploadPageProps> = ({
 
   const guessDocType = (filename: string): DocType => {
     const lower = filename.toLowerCase();
+    // Check if filename clearly indicates a specific type
     if (lower.includes('balance') || lower.includes('bs') || lower.includes('position')) {
       return 'balance';
     }
-    return 'income';
+    if (lower.includes('income') || lower.includes('p&l') || lower.includes('profit') || lower.includes('loss')) {
+      return 'income';
+    }
+    // Default to 'auto' for auto-detection of statement types
+    return 'auto';
   };
 
   const handleDrop = useCallback((e: React.DragEvent<HTMLDivElement>) => {
@@ -67,7 +82,12 @@ export const UploadPage: React.FC<UploadPageProps> = ({
 
   const handleSubmit = () => {
     if (files.length > 0) {
-      onUpload(files);
+      const options: UploadOptions = {};
+      // Only pass model if it's not the default
+      if (selectedModel !== DEFAULT_MODEL.id) {
+        options.modelOverride = selectedModel;
+      }
+      onUpload(files, options);
     }
   };
 
@@ -187,12 +207,46 @@ export const UploadPage: React.FC<UploadPageProps> = ({
               onClick={() => setShowAdvanced(!showAdvanced)}
               className="w-full px-4 py-3 flex items-center justify-between text-sm font-medium text-gray-700 bg-gray-50 hover:bg-gray-100 transition-colors"
             >
-              <span>Advanced Options</span>
+              <span className="flex items-center gap-2">
+                Advanced Options
+                {selectedModel !== DEFAULT_MODEL.id && (
+                  <span className="text-xs px-2 py-0.5 bg-violet-100 text-violet-700 rounded-full">
+                    Custom Model
+                  </span>
+                )}
+              </span>
               {showAdvanced ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
             </button>
             {showAdvanced && (
-              <div className="p-4 bg-white border-t border-gray-200">
-                <p className="text-sm text-gray-600">
+              <div className="p-4 bg-white border-t border-gray-200 space-y-4">
+                {/* Model Selection */}
+                <div>
+                  <label className="flex items-center gap-2 text-sm font-medium text-gray-700 mb-2">
+                    <Cpu className="w-4 h-4 text-gray-500" />
+                    AI Model
+                  </label>
+                  <select
+                    value={selectedModel}
+                    onChange={(e) => setSelectedModel(e.target.value)}
+                    className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500"
+                  >
+                    {getGroupedModels().map(group => (
+                      <optgroup key={group.provider} label={group.providerName}>
+                        {group.models.map((model) => {
+                          const displayInfo = getModelDisplayInfo(model.id);
+                          return (
+                            <option key={model.id} value={model.id}>
+                              {displayInfo.name} - {displayInfo.description}
+                            </option>
+                          );
+                        })}
+                      </optgroup>
+                    ))}
+                  </select>
+                </div>
+                
+                {/* Info Text */}
+                <p className="text-sm text-gray-500">
                   Document types are auto-detected from filenames. Edit them above if needed.
                   Fiscal periods are automatically detected from statement headers.
                 </p>
@@ -203,19 +257,31 @@ export const UploadPage: React.FC<UploadPageProps> = ({
 
         {/* Summary Stats */}
         {hasFiles && (
-          <div className="flex items-center justify-center gap-8 text-sm">
-            <div className="flex items-center gap-2">
-              <span className="w-3 h-3 rounded-full bg-blue-500"></span>
-              <span className="text-gray-600">
-                {displayFiles.filter(f => f.docType === 'income').length} Income Statement(s)
-              </span>
-            </div>
-            <div className="flex items-center gap-2">
-              <span className="w-3 h-3 rounded-full bg-purple-500"></span>
-              <span className="text-gray-600">
-                {displayFiles.filter(f => f.docType === 'balance').length} Balance Sheet(s)
-              </span>
-            </div>
+          <div className="flex items-center justify-center gap-6 text-sm flex-wrap">
+            {displayFiles.filter(f => f.docType === 'auto').length > 0 && (
+              <div className="flex items-center gap-2">
+                <span className="w-3 h-3 rounded-full bg-emerald-500"></span>
+                <span className="text-gray-600">
+                  {displayFiles.filter(f => f.docType === 'auto').length} Auto-Detect
+                </span>
+              </div>
+            )}
+            {displayFiles.filter(f => f.docType === 'income').length > 0 && (
+              <div className="flex items-center gap-2">
+                <span className="w-3 h-3 rounded-full bg-blue-500"></span>
+                <span className="text-gray-600">
+                  {displayFiles.filter(f => f.docType === 'income').length} Income Statement(s)
+                </span>
+              </div>
+            )}
+            {displayFiles.filter(f => f.docType === 'balance').length > 0 && (
+              <div className="flex items-center gap-2">
+                <span className="w-3 h-3 rounded-full bg-purple-500"></span>
+                <span className="text-gray-600">
+                  {displayFiles.filter(f => f.docType === 'balance').length} Balance Sheet(s)
+                </span>
+              </div>
+            )}
           </div>
         )}
 
@@ -289,11 +355,19 @@ const FileRow: React.FC<FileRowProps> = ({ item, index, onRemove, onUpdateDocTyp
       {/* File Icon */}
       <div className={clsx(
         'w-10 h-10 rounded-lg flex items-center justify-center flex-shrink-0',
-        item.docType === 'income' ? 'bg-blue-100' : 'bg-purple-100'
+        item.docType === 'auto'
+          ? 'bg-emerald-100'
+          : item.docType === 'income' 
+            ? 'bg-blue-100' 
+            : 'bg-purple-100'
       )}>
         <FileText className={clsx(
           'w-5 h-5',
-          item.docType === 'income' ? 'text-blue-600' : 'text-purple-600'
+          item.docType === 'auto'
+            ? 'text-emerald-600'
+            : item.docType === 'income' 
+              ? 'text-blue-600' 
+              : 'text-purple-600'
         )} />
       </div>
 
@@ -312,12 +386,15 @@ const FileRow: React.FC<FileRowProps> = ({ item, index, onRemove, onUpdateDocTyp
         disabled={disabled}
         className={clsx(
           'px-3 py-1.5 text-sm rounded-lg border font-medium transition-colors',
-          item.docType === 'income' 
-            ? 'bg-blue-50 border-blue-200 text-blue-700' 
-            : 'bg-purple-50 border-purple-200 text-purple-700',
+          item.docType === 'auto'
+            ? 'bg-emerald-50 border-emerald-200 text-emerald-700'
+            : item.docType === 'income' 
+              ? 'bg-blue-50 border-blue-200 text-blue-700' 
+              : 'bg-purple-50 border-purple-200 text-purple-700',
           disabled && 'opacity-50 cursor-not-allowed'
         )}
       >
+        <option value="auto">Auto-Detect</option>
         <option value="income">Income Statement</option>
         <option value="balance">Balance Sheet</option>
       </select>

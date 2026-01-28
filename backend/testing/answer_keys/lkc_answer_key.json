@@ -1,0 +1,190 @@
+{
+  "company_id": "lkc",
+  "company_name": "Lodging Kit Company",
+  "files": [
+    {
+      "filename": "LKC 2022 Balance Sheet-combined.pdf",
+      "doc_type": "income",
+      "periods": [
+        {
+          "period_label": "2022",
+          "doc_type": "income",
+          "expected": {
+            "revenue": {"value": 25468862.21, "tolerance_percent": 5.0, "required": true, "notes": "Total Income from P&L section"},
+            "cogs": {"value": 15102564.51, "tolerance_percent": 5.0, "required": true, "notes": "Total Cost of Sales"},
+            "gross_profit": {"value": 10366297.70, "tolerance_percent": 5.0, "required": true, "notes": "Calculated: Revenue - COGS"},
+            "sga": {"value": 8690662.70, "tolerance_percent": 5.0, "required": false, "notes": "Derived from Total Expense less DA, Interest, Tax"},
+            "depreciation_amortization": {"value": 53259.87, "tolerance_percent": 5.0, "required": false, "notes": "Sum of depreciation lines"},
+            "total_operating_expenses": {"value": 8743922.57, "tolerance_percent": 5.0, "required": true, "notes": "SG&A + D&A"},
+            "operating_income": {"value": 1622375.13, "tolerance_percent": 5.0, "required": true, "notes": "Gross Profit - Total OpEx"},
+            "interest_expense": {"value": 50051.82, "tolerance_percent": 5.0, "required": false, "notes": "Interest Expense FL + NY"},
+            "interest_income": {"value": null, "tolerance_percent": 5.0, "required": false, "notes": "Not shown on statement"},
+            "other_income_expense": {"value": 44315.37, "tolerance_percent": 10.0, "required": false, "notes": "Other non-op income (46311.13) - Other non-op expense (1995.76)"},
+            "income_tax_expense": {"value": -26119.27, "tolerance_percent": 10.0, "required": false, "notes": "NYS PTET credit + Corporate taxes"},
+            "net_income": {"value": 1642757.95, "tolerance_percent": 5.0, "required": true, "notes": "Operating Income + Other - Interest - Tax"}
+          }
+        }
+      ]
+    },
+    {
+      "filename": "LKC 2023 PL Stmt.pdf",
+      "doc_type": "income",
+      "periods": [
+        {
+          "period_label": "2023",
+          "doc_type": "income",
+          "expected": {
+            "revenue": {"value": 25402908.73, "tolerance_percent": 5.0, "required": true, "notes": "Total Income"},
+            "cogs": {"value": 14416534.88, "tolerance_percent": 5.0, "required": true, "notes": "Total Cost of Sales"},
+            "gross_profit": {"value": 10986373.85, "tolerance_percent": 5.0, "required": true, "notes": "Calculated: Revenue - COGS"},
+            "sga": {"value": 9059135.67, "tolerance_percent": 5.0, "required": false, "notes": "Derived from Total Expense less DA, Interest, Tax"},
+            "depreciation_amortization": {"value": 276365.85, "tolerance_percent": 5.0, "required": false, "notes": "Sum of all depreciation lines"},
+            "total_operating_expenses": {"value": 9335501.52, "tolerance_percent": 5.0, "required": true, "notes": "SG&A + D&A"},
+            "operating_income": {"value": 1650872.33, "tolerance_percent": 5.0, "required": true, "notes": "Gross Profit - Total OpEx"},
+            "interest_expense": {"value": 48760.91, "tolerance_percent": 5.0, "required": false, "notes": "Interest Expense FL + NY"},
+            "interest_income": {"value": 21897.65, "tolerance_percent": 5.0, "required": false, "notes": "Interest Income"},
+            "other_income_expense": {"value": 26379.31, "tolerance_percent": 10.0, "required": false, "notes": "Other non-op income (28275.07) - Other non-op expense (1895.76)"},
+            "income_tax_expense": {"value": 3056.26, "tolerance_percent": 10.0, "required": false, "notes": "Corporate Tax NY + TX"},
+            "net_income": {"value": 1647332.12, "tolerance_percent": 5.0, "required": true, "notes": "Operating + Interest Income + Other - Interest Exp - Tax"}
+          }
+        }
+      ]
+    },
+    {
+      "filename": "LKC 2024 PL Stmt.pdf",
+      "doc_type": "income",
+      "periods": [
+        {
+          "period_label": "2024",
+          "doc_type": "income",
+          "expected": {
+            "revenue": {"value": 27427473.47, "tolerance_percent": 5.0, "required": true, "notes": "Total Income"},
+            "cogs": {"value": 15660800.25, "tolerance_percent": 5.0, "required": true, "notes": "Total Cost of Sales"},
+            "gross_profit": {"value": 11766673.22, "tolerance_percent": 5.0, "required": true, "notes": "Calculated: Revenue - COGS"},
+            "sga": {"value": 9882571.06, "tolerance_percent": 5.0, "required": false, "notes": "Derived from Total Expense less DA, Interest, Tax"},
+            "depreciation_amortization": {"value": 50387.61, "tolerance_percent": 5.0, "required": false, "notes": "Sum of all depreciation lines"},
+            "total_operating_expenses": {"value": 9932958.67, "tolerance_percent": 5.0, "required": true, "notes": "SG&A + D&A"},
+            "operating_income": {"value": 1833714.55, "tolerance_percent": 5.0, "required": true, "notes": "Gross Profit - Total OpEx"},
+            "interest_expense": {"value": 41737.60, "tolerance_percent": 5.0, "required": false, "notes": "Interest Expense FL + NY"},
+            "interest_income": {"value": 30806.43, "tolerance_percent": 5.0, "required": false, "notes": "Interest Income"},
+            "other_income_expense": {"value": 85528.72, "tolerance_percent": 10.0, "required": false, "notes": "Other non-op income (87424.48) - Other non-op expense (1895.76)"},
+            "income_tax_expense": {"value": 1000.00, "tolerance_percent": 10.0, "required": false, "notes": "Corporate Tax NY"},
+            "net_income": {"value": 1907312.10, "tolerance_percent": 5.0, "required": true, "notes": "Operating + Interest Income + Other - Interest Exp - Tax"}
+          }
+        }
+      ]
+    },
+    {
+      "filename": "2025 YTD PL - LKC.pdf",
+      "doc_type": "income",
+      "periods": [
+        {
+          "period_label": "2025 YTD",
+          "doc_type": "income",
+          "expected": {
+            "revenue": {"value": 5785259.61, "tolerance_percent": 5.0, "required": true, "notes": "Total Income (1/1/25 to 3/27/25)"},
+            "cogs": {"value": 3277066.63, "tolerance_percent": 5.0, "required": true, "notes": "Total Cost of Sales"},
+            "gross_profit": {"value": 2508192.98, "tolerance_percent": 5.0, "required": true, "notes": "Calculated: Revenue - COGS"},
+            "sga": {"value": 2185415.93, "tolerance_percent": 5.0, "required": false, "notes": "Derived from Total Expense less DA, Interest"},
+            "depreciation_amortization": {"value": 9713.48, "tolerance_percent": 5.0, "required": false, "notes": "Sum of all depreciation lines"},
+            "total_operating_expenses": {"value": 2195129.41, "tolerance_percent": 5.0, "required": true, "notes": "SG&A + D&A"},
+            "operating_income": {"value": 313063.57, "tolerance_percent": 5.0, "required": true, "notes": "Gross Profit - Total OpEx"},
+            "interest_expense": {"value": 11909.82, "tolerance_percent": 5.0, "required": false, "notes": "Interest Expense FL + NY"},
+            "interest_income": {"value": 109.99, "tolerance_percent": 5.0, "required": false, "notes": "Interest Income"},
+            "other_income_expense": {"value": 3056.93, "tolerance_percent": 10.0, "required": false, "notes": "Other non-op income (3530.87) - Other non-op expense (473.94)"},
+            "income_tax_expense": {"value": null, "tolerance_percent": 5.0, "required": false, "notes": "Not shown on statement"},
+            "net_income": {"value": 304320.67, "tolerance_percent": 5.0, "required": true, "notes": "Operating + Interest Income + Other - Interest Exp"}
+          }
+        }
+      ]
+    },
+    {
+      "filename": "LKC 2022 Balance Sheet-combined.pdf",
+      "doc_type": "balance",
+      "periods": [
+        {
+          "period_label": "2022",
+          "doc_type": "balance",
+          "expected": {
+            "cash_and_equivalents": {"value": null, "tolerance_percent": 5.0, "required": true, "notes": "TODO: Extract from source"},
+            "accounts_receivable": {"value": null, "tolerance_percent": 5.0, "required": true},
+            "inventory": {"value": null, "tolerance_percent": 5.0, "required": false},
+            "total_current_assets": {"value": null, "tolerance_percent": 5.0, "required": true},
+            "total_assets": {"value": null, "tolerance_percent": 5.0, "required": true},
+            "accounts_payable": {"value": null, "tolerance_percent": 5.0, "required": true},
+            "total_current_liabilities": {"value": null, "tolerance_percent": 5.0, "required": true},
+            "total_liabilities": {"value": null, "tolerance_percent": 5.0, "required": true},
+            "total_shareholders_equity": {"value": null, "tolerance_percent": 5.0, "required": true},
+            "total_liabilities_and_equity": {"value": null, "tolerance_percent": 5.0, "required": true}
+          }
+        }
+      ]
+    },
+    {
+      "filename": "LKC 2023 Balance Sheet.pdf",
+      "doc_type": "balance",
+      "periods": [
+        {
+          "period_label": "2023",
+          "doc_type": "balance",
+          "expected": {
+            "cash_and_equivalents": {"value": null, "tolerance_percent": 5.0, "required": true},
+            "accounts_receivable": {"value": null, "tolerance_percent": 5.0, "required": true},
+            "inventory": {"value": null, "tolerance_percent": 5.0, "required": false},
+            "total_current_assets": {"value": null, "tolerance_percent": 5.0, "required": true},
+            "total_assets": {"value": null, "tolerance_percent": 5.0, "required": true},
+            "accounts_payable": {"value": null, "tolerance_percent": 5.0, "required": true},
+            "total_current_liabilities": {"value": null, "tolerance_percent": 5.0, "required": true},
+            "total_liabilities": {"value": null, "tolerance_percent": 5.0, "required": true},
+            "total_shareholders_equity": {"value": null, "tolerance_percent": 5.0, "required": true},
+            "total_liabilities_and_equity": {"value": null, "tolerance_percent": 5.0, "required": true}
+          }
+        }
+      ]
+    },
+    {
+      "filename": "LKC 2024 Balance Sheet.pdf",
+      "doc_type": "balance",
+      "periods": [
+        {
+          "period_label": "2024",
+          "doc_type": "balance",
+          "expected": {
+            "cash_and_equivalents": {"value": null, "tolerance_percent": 5.0, "required": true},
+            "accounts_receivable": {"value": null, "tolerance_percent": 5.0, "required": true},
+            "inventory": {"value": null, "tolerance_percent": 5.0, "required": false},
+            "total_current_assets": {"value": null, "tolerance_percent": 5.0, "required": true},
+            "total_assets": {"value": null, "tolerance_percent": 5.0, "required": true},
+            "accounts_payable": {"value": null, "tolerance_percent": 5.0, "required": true},
+            "total_current_liabilities": {"value": null, "tolerance_percent": 5.0, "required": true},
+            "total_liabilities": {"value": null, "tolerance_percent": 5.0, "required": true},
+            "total_shareholders_equity": {"value": null, "tolerance_percent": 5.0, "required": true},
+            "total_liabilities_and_equity": {"value": null, "tolerance_percent": 5.0, "required": true}
+          }
+        }
+      ]
+    },
+    {
+      "filename": "2025 YTD Bal sh-LKC.pdf",
+      "doc_type": "balance",
+      "periods": [
+        {
+          "period_label": "2025 YTD",
+          "doc_type": "balance",
+          "expected": {
+            "cash_and_equivalents": {"value": null, "tolerance_percent": 5.0, "required": true},
+            "accounts_receivable": {"value": null, "tolerance_percent": 5.0, "required": true},
+            "inventory": {"value": null, "tolerance_percent": 5.0, "required": false},
+            "total_current_assets": {"value": null, "tolerance_percent": 5.0, "required": true},
+            "total_assets": {"value": null, "tolerance_percent": 5.0, "required": true},
+            "accounts_payable": {"value": null, "tolerance_percent": 5.0, "required": true},
+            "total_current_liabilities": {"value": null, "tolerance_percent": 5.0, "required": true},
+            "total_liabilities": {"value": null, "tolerance_percent": 5.0, "required": true},
+            "total_shareholders_equity": {"value": null, "tolerance_percent": 5.0, "required": true},
+            "total_liabilities_and_equity": {"value": null, "tolerance_percent": 5.0, "required": true}
+          }
+        }
+      ]
+    }
+  ]
+}

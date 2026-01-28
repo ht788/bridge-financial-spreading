@@ -104,11 +104,41 @@ export interface MultiPeriodBalanceSheet {
 
 export type MultiPeriodFinancialStatement = MultiPeriodIncomeStatement | MultiPeriodBalanceSheet;
 
+// =============================================================================
+// COMBINED EXTRACTION TYPES (Auto-Detect Mode)
+// =============================================================================
+
+export interface StatementTypeDetection {
+  has_income_statement: boolean;
+  has_balance_sheet: boolean;
+  income_statement_pages: number[];
+  balance_sheet_pages: number[];
+  confidence: number;
+  income_statement_confidence: number;
+  balance_sheet_confidence: number;
+  notes?: string | null;
+}
+
+export interface CombinedFinancialExtraction {
+  income_statement: MultiPeriodIncomeStatement | null;
+  balance_sheet: MultiPeriodBalanceSheet | null;
+  detected_types: StatementTypeDetection;
+  extraction_metadata: Record<string, unknown>;
+}
+
 /**
  * Type guard to check if data is multi-period format
  */
-export function isMultiPeriod(data: FinancialStatement | MultiPeriodFinancialStatement): data is MultiPeriodFinancialStatement {
+export function isMultiPeriod(data: FinancialStatement | MultiPeriodFinancialStatement | CombinedFinancialExtraction): data is MultiPeriodFinancialStatement {
   return 'periods' in data && Array.isArray(data.periods);
+}
+
+/**
+ * Type guard to check if data is combined extraction format (from auto-detect mode)
+ */
+export function isCombinedExtraction(data: unknown): data is CombinedFinancialExtraction {
+  if (!data || typeof data !== 'object') return false;
+  return 'detected_types' in data && ('income_statement' in data || 'balance_sheet' in data);
 }
 
 /**
@@ -129,17 +159,25 @@ export interface SpreadMetadata {
   original_filename: string;
   job_id: string;
   pdf_url: string;
+  doc_type?: string;
+  // Auto-detect mode additional metadata
+  is_combined?: boolean;
+  detected_income_statement?: boolean;
+  detected_balance_sheet?: boolean;
+  statement_types_extracted?: string[];
+  execution_time_seconds?: number;
+  parallel_extraction?: boolean;
 }
 
 export interface SpreadResponse {
   success: boolean;
   job_id: string;
-  data: FinancialStatement | MultiPeriodFinancialStatement | null;
+  data: FinancialStatement | MultiPeriodFinancialStatement | CombinedFinancialExtraction | null;
   error?: string;
   metadata: SpreadMetadata;
 }
 
-export type DocType = 'income' | 'balance';
+export type DocType = 'income' | 'balance' | 'auto';
 
 export interface SpreadRequest {
   file: File;
@@ -147,6 +185,7 @@ export interface SpreadRequest {
   period?: string;
   max_pages?: number;
   dpi?: number;
+  model_override?: string;
 }
 
 // =============================================================================
@@ -174,7 +213,7 @@ export interface BatchSpreadRequest {
 }
 
 export interface BatchSpreadResponse {
-  job_id: string;
+  batch_id: string;
   total_files: number;
   completed: number;
   failed: number;
@@ -184,6 +223,7 @@ export interface BatchSpreadResponse {
     data?: FinancialStatement | MultiPeriodFinancialStatement;
     error?: string;
     metadata?: SpreadMetadata;
+    job_id?: string;
   }>;
 }
 

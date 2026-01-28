@@ -1,0 +1,654 @@
+{
+  "company_id": "pneo",
+  "company_name": "pNeo LLC",
+  "files": [
+    {
+      "filename": "2024_Q4_pNeo_Consolidated_Financial_Reports.pdf",
+      "doc_type": "income",
+      "periods": [
+        {
+          "period_label": "FY2024",
+          "doc_type": "income",
+          "expected": {
+            "revenue": {
+              "value": 6516729.0,
+              "tolerance_percent": 5.0,
+              "required": true,
+              "notes": "Product Sales: $6,854,718 + Digital Sales (App): $42,467 + Shipping & Handling: $89,900 - Returns and Refunds: ($470,356)"
+            },
+            "cogs": {
+              "value": 3210117.0,
+              "tolerance_percent": 5.0,
+              "required": true,
+              "notes": "COGS: $2,421,741 + Amazon Fees: $608,839 + Freight Out: $179,538"
+            },
+            "gross_profit": {
+              "value": 3306612.0,
+              "tolerance_percent": 5.0,
+              "required": true,
+              "notes": "Gross Profit: $3,306,612"
+            },
+            "sga": {
+              "value": 2872958.0,
+              "tolerance_percent": 5.0,
+              "required": false,
+              "notes": "Sum of all SG&A line items including Advertising & Marketing, Consultants, Insurance, Wages & Salaries, etc."
+            },
+            "research_and_development": {
+              "value": 60322.0,
+              "tolerance_percent": 5.0,
+              "required": false,
+              "notes": "Research & Development: $60,322"
+            },
+            "depreciation_amortization": {
+              "value": 587926.0,
+              "tolerance_percent": 5.0,
+              "required": false,
+              "notes": "Amortization: $510,922 + Depreciation: $77,004"
+            },
+            "other_operating_expenses": {
+              "value": null,
+              "tolerance_percent": 5.0,
+              "required": false,
+              "notes": "Other Expenses mapped to SGA"
+            },
+            "total_operating_expenses": {
+              "value": 2933280.0,
+              "tolerance_percent": 5.0,
+              "required": true,
+              "notes": "Total Expenses: $2,933,280"
+            },
+            "operating_income": {
+              "value": 373332.0,
+              "tolerance_percent": 5.0,
+              "required": true,
+              "notes": "EBITDA: $373,332"
+            },
+            "interest_expense": {
+              "value": 159415.0,
+              "tolerance_percent": 5.0,
+              "required": false,
+              "notes": "Interest-Expenses: $159,415"
+            },
+            "interest_income": {
+              "value": null,
+              "tolerance_percent": 5.0,
+              "required": false,
+              "notes": "Not present in document"
+            },
+            "other_income_expense": {
+              "value": null,
+              "tolerance_percent": 5.0,
+              "required": false,
+              "notes": "Not present in document"
+            },
+            "pretax_income": {
+              "value": -374009.0,
+              "tolerance_percent": 10.0,
+              "required": false,
+              "notes": "Calculated: EBITDA ($373,332) - D&A ($587,926) - Interest ($159,415) = ($374,009)"
+            },
+            "income_tax_expense": {
+              "value": null,
+              "tolerance_percent": 5.0,
+              "required": false,
+              "notes": "Not present - likely due to net loss"
+            },
+            "net_income": {
+              "value": -374009.0,
+              "tolerance_percent": 10.0,
+              "required": true,
+              "notes": "Net Income: ($374,009)"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "filename": "2024_Q4_pNeo_Consolidated_Financial_Reports.pdf",
+      "doc_type": "balance",
+      "periods": [
+        {
+          "period_label": "FY2024",
+          "doc_type": "balance",
+          "expected": {
+            "cash_and_equivalents": {
+              "value": 63121.0,
+              "tolerance_percent": 5.0,
+              "required": true,
+              "notes": "Bank Accounts: $63,121 + Undeposited Funds: $0"
+            },
+            "short_term_investments": {
+              "value": null,
+              "tolerance_percent": 5.0,
+              "required": false,
+              "notes": "Not present in document"
+            },
+            "accounts_receivable": {
+              "value": 513842.0,
+              "tolerance_percent": 5.0,
+              "required": true,
+              "notes": "Accounts Receivable: $513,842"
+            },
+            "inventory": {
+              "value": 437774.0,
+              "tolerance_percent": 5.0,
+              "required": false,
+              "notes": "Inventory On Hand: $437,774"
+            },
+            "prepaid_expenses": {
+              "value": null,
+              "tolerance_percent": 5.0,
+              "required": false,
+              "notes": "Not present - may be included in Other Assets"
+            },
+            "other_current_assets": {
+              "value": 139646.0,
+              "tolerance_percent": 5.0,
+              "required": false,
+              "notes": "Deposits: $80,468 + Other Assets: $59,178"
+            },
+            "total_current_assets": {
+              "value": 1154383.0,
+              "tolerance_percent": 5.0,
+              "required": true,
+              "notes": "Total Current Assets: $1,154,383"
+            },
+            "ppe_gross": {
+              "value": 1305746.0,
+              "tolerance_percent": 5.0,
+              "required": false,
+              "notes": "Property: $925,438 + Vehicle Asset: $309,600 + Tooling: $70,708"
+            },
+            "accumulated_depreciation": {
+              "value": -652263.0,
+              "tolerance_percent": 5.0,
+              "required": false,
+              "notes": "Depreciation: ($652,263)"
+            },
+            "ppe_net": {
+              "value": 653483.0,
+              "tolerance_percent": 5.0,
+              "required": false,
+              "notes": "Calculated: PPE Gross ($1,305,746) - Accumulated Depreciation ($652,263) = $653,483"
+            },
+            "intangible_assets": {
+              "value": 2537306.0,
+              "tolerance_percent": 5.0,
+              "required": false,
+              "notes": "Intangible Assets: $4,826,103 - Amortization: ($2,288,797)"
+            },
+            "goodwill": {
+              "value": null,
+              "tolerance_percent": 5.0,
+              "required": false,
+              "notes": "Not present - may be included in Intangible Assets"
+            },
+            "long_term_investments": {
+              "value": 517247.0,
+              "tolerance_percent": 5.0,
+              "required": false,
+              "notes": "Investments: $517,247"
+            },
+            "other_non_current_assets": {
+              "value": null,
+              "tolerance_percent": 5.0,
+              "required": false,
+              "notes": "Not present in document"
+            },
+            "total_non_current_assets": {
+              "value": 3708035.0,
+              "tolerance_percent": 5.0,
+              "required": true,
+              "notes": "Total Fixed Assets: $3,708,035"
+            },
+            "total_assets": {
+              "value": 4862418.0,
+              "tolerance_percent": 5.0,
+              "required": true,
+              "notes": "TOTAL ASSETS: $4,862,418"
+            },
+            "accounts_payable": {
+              "value": -32617.0,
+              "tolerance_percent": 10.0,
+              "required": true,
+              "notes": "Accounts Payable: ($32,617) - negative indicates net prepayment/credit position"
+            },
+            "short_term_debt": {
+              "value": 1120110.0,
+              "tolerance_percent": 5.0,
+              "required": false,
+              "notes": "Credit Cards: $69,064 + Lines Of Credit: $1,051,046"
+            },
+            "accrued_expenses": {
+              "value": 36536.0,
+              "tolerance_percent": 5.0,
+              "required": false,
+              "notes": "Accrual: $36,536"
+            },
+            "deferred_revenue_current": {
+              "value": null,
+              "tolerance_percent": 5.0,
+              "required": false,
+              "notes": "Not present in document"
+            },
+            "other_current_liabilities": {
+              "value": 24649.0,
+              "tolerance_percent": 5.0,
+              "required": false,
+              "notes": "Taxes Payable: $24,649"
+            },
+            "total_current_liabilities": {
+              "value": 1148678.0,
+              "tolerance_percent": 5.0,
+              "required": true,
+              "notes": "Total Current Liabilities: $1,148,678"
+            },
+            "long_term_debt": {
+              "value": 2423195.0,
+              "tolerance_percent": 5.0,
+              "required": false,
+              "notes": "Long Term Investor Loan: $396,957 + Note Payable - Owner/Investor: $1,516,911 + Mortgage: $445,250 + Vehicle Loan: $64,077"
+            },
+            "deferred_tax_liabilities": {
+              "value": null,
+              "tolerance_percent": 5.0,
+              "required": false,
+              "notes": "Not present in document"
+            },
+            "pension_liabilities": {
+              "value": null,
+              "tolerance_percent": 5.0,
+              "required": false,
+              "notes": "Not present in document"
+            },
+            "other_non_current_liabilities": {
+              "value": null,
+              "tolerance_percent": 5.0,
+              "required": false,
+              "notes": "Not present in document"
+            },
+            "total_non_current_liabilities": {
+              "value": 2423195.0,
+              "tolerance_percent": 5.0,
+              "required": true,
+              "notes": "Total Long Term Liabilities: $2,423,195"
+            },
+            "total_liabilities": {
+              "value": 3571873.0,
+              "tolerance_percent": 5.0,
+              "required": true,
+              "notes": "Calculated: Total Current Liabilities ($1,148,678) + Total Long Term Liabilities ($2,423,195) = $3,571,873"
+            },
+            "common_stock": {
+              "value": null,
+              "tolerance_percent": 5.0,
+              "required": false,
+              "notes": "Not present - LLC structure uses member equity"
+            },
+            "additional_paid_in_capital": {
+              "value": null,
+              "tolerance_percent": 5.0,
+              "required": false,
+              "notes": "Not present - LLC structure"
+            },
+            "retained_earnings": {
+              "value": null,
+              "tolerance_percent": 5.0,
+              "required": false,
+              "notes": "Not separately stated - equity shown as single line"
+            },
+            "treasury_stock": {
+              "value": null,
+              "tolerance_percent": 5.0,
+              "required": false,
+              "notes": "Not present in document"
+            },
+            "accumulated_other_comprehensive_income": {
+              "value": null,
+              "tolerance_percent": 5.0,
+              "required": false,
+              "notes": "Not present in document"
+            },
+            "total_shareholders_equity": {
+              "value": 1290545.0,
+              "tolerance_percent": 5.0,
+              "required": true,
+              "notes": "Total Equity: $1,290,545"
+            },
+            "total_liabilities_and_equity": {
+              "value": 4862418.0,
+              "tolerance_percent": 5.0,
+              "required": true,
+              "notes": "Total Liabilities & Equity: $4,862,418"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "filename": "FY_2023_pNeo_Financial_Packet.pdf",
+      "doc_type": "income",
+      "periods": [
+        {
+          "period_label": "FY2023",
+          "doc_type": "income",
+          "expected": {
+            "revenue": {
+              "value": 7916624.0,
+              "tolerance_percent": 5.0,
+              "required": true,
+              "notes": "Product Sales: $8,490,972 + Digital Sales (App): $35,363 - Discounts and Allowances: ($23,253) - Returns and Refunds: ($586,458)"
+            },
+            "cogs": {
+              "value": 3317672.0,
+              "tolerance_percent": 5.0,
+              "required": true,
+              "notes": "COGS: $1,329,111 + Amazon Fees: $1,712,682 + Shipping & Handling: $50,550 + Inventory Adjustments: $9,419 + Import Costs: $71,590 + Other COGS: $144,320"
+            },
+            "gross_profit": {
+              "value": 4598952.0,
+              "tolerance_percent": 5.0,
+              "required": true,
+              "notes": "Gross Income: $4,598,952"
+            },
+            "sga": {
+              "value": 3488096.0,
+              "tolerance_percent": 5.0,
+              "required": false,
+              "notes": "Sum of all SG&A line items including Advertising & Marketing: $1,141,447, Wages and Salary: $1,185,229, Rent: $263,500, etc."
+            },
+            "research_and_development": {
+              "value": 106353.0,
+              "tolerance_percent": 5.0,
+              "required": false,
+              "notes": "Research and Development: $106,353"
+            },
+            "depreciation_amortization": {
+              "value": 519989.0,
+              "tolerance_percent": 5.0,
+              "required": false,
+              "notes": "Amortization: $502,286 + Depreciation: $17,703"
+            },
+            "other_operating_expenses": {
+              "value": null,
+              "tolerance_percent": 5.0,
+              "required": false,
+              "notes": "Other Expenses mapped to SGA"
+            },
+            "total_operating_expenses": {
+              "value": 3594449.0,
+              "tolerance_percent": 5.0,
+              "required": true,
+              "notes": "Total Expenses: $3,594,449"
+            },
+            "operating_income": {
+              "value": 1004503.0,
+              "tolerance_percent": 5.0,
+              "required": true,
+              "notes": "EBITDA: $1,004,503"
+            },
+            "interest_expense": {
+              "value": 110348.0,
+              "tolerance_percent": 5.0,
+              "required": false,
+              "notes": "Interest: $110,348"
+            },
+            "interest_income": {
+              "value": null,
+              "tolerance_percent": 5.0,
+              "required": false,
+              "notes": "Not present in document"
+            },
+            "other_income_expense": {
+              "value": 8.0,
+              "tolerance_percent": 10.0,
+              "required": false,
+              "notes": "Other: $8"
+            },
+            "pretax_income": {
+              "value": 471167.0,
+              "tolerance_percent": 10.0,
+              "required": false,
+              "notes": "Calculated: EBITDA ($1,004,503) - D&A ($519,989) - Interest ($110,348) - Other ($8) + Tax Credit ($48,505)"
+            },
+            "income_tax_expense": {
+              "value": -48505.0,
+              "tolerance_percent": 10.0,
+              "required": false,
+              "notes": "Federal Tax: ($48,505) - tax credit"
+            },
+            "net_income": {
+              "value": 422662.0,
+              "tolerance_percent": 10.0,
+              "required": true,
+              "notes": "Net Income: $422,662"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "filename": "FY_2023_pNeo_Financial_Packet.pdf",
+      "doc_type": "balance",
+      "periods": [
+        {
+          "period_label": "FY2023",
+          "doc_type": "balance",
+          "expected": {
+            "cash_and_equivalents": {
+              "value": 84442.0,
+              "tolerance_percent": 5.0,
+              "required": true,
+              "notes": "Bank Accounts: $80,784 + Undeposited Funds: $3,658"
+            },
+            "short_term_investments": {
+              "value": null,
+              "tolerance_percent": 5.0,
+              "required": false,
+              "notes": "Not present in document"
+            },
+            "accounts_receivable": {
+              "value": 432190.0,
+              "tolerance_percent": 5.0,
+              "required": true,
+              "notes": "Accounts Receivable: $432,190"
+            },
+            "inventory": {
+              "value": 599794.0,
+              "tolerance_percent": 5.0,
+              "required": false,
+              "notes": "Inventory On Hand: $599,794"
+            },
+            "prepaid_expenses": {
+              "value": 100349.0,
+              "tolerance_percent": 5.0,
+              "required": false,
+              "notes": "Prepaid Expenses: $100,349"
+            },
+            "other_current_assets": {
+              "value": 3049.0,
+              "tolerance_percent": 5.0,
+              "required": false,
+              "notes": "Deposits: $3,049"
+            },
+            "total_current_assets": {
+              "value": 1219824.0,
+              "tolerance_percent": 5.0,
+              "required": true,
+              "notes": "Total Current Assets: $1,219,824"
+            },
+            "ppe_gross": {
+              "value": 249114.0,
+              "tolerance_percent": 5.0,
+              "required": false,
+              "notes": "Vehicle Asset: $232,114 + Tooling: $17,000"
+            },
+            "accumulated_depreciation": {
+              "value": -2365552.0,
+              "tolerance_percent": 5.0,
+              "required": false,
+              "notes": "Amortization & Depreciation: ($2,365,552)"
+            },
+            "ppe_net": {
+              "value": null,
+              "tolerance_percent": 5.0,
+              "required": false,
+              "notes": "Not separately calculable - accumulated D&A shown combined for all fixed assets"
+            },
+            "intangible_assets": {
+              "value": 4826103.0,
+              "tolerance_percent": 5.0,
+              "required": false,
+              "notes": "Intangible Assets: $4,826,103"
+            },
+            "goodwill": {
+              "value": null,
+              "tolerance_percent": 5.0,
+              "required": false,
+              "notes": "Not present - may be included in Intangible Assets"
+            },
+            "long_term_investments": {
+              "value": 521783.0,
+              "tolerance_percent": 5.0,
+              "required": false,
+              "notes": "Investments: $521,783"
+            },
+            "other_non_current_assets": {
+              "value": 1642162.0,
+              "tolerance_percent": 5.0,
+              "required": false,
+              "notes": "Note Receivable: $1,474,545 + Other Fixed Assets: $167,617"
+            },
+            "total_non_current_assets": {
+              "value": 4873610.0,
+              "tolerance_percent": 5.0,
+              "required": true,
+              "notes": "Total Fixed Assets: $4,873,610"
+            },
+            "total_assets": {
+              "value": 6093435.0,
+              "tolerance_percent": 5.0,
+              "required": true,
+              "notes": "Total Assets: $6,093,435"
+            },
+            "accounts_payable": {
+              "value": 555682.0,
+              "tolerance_percent": 5.0,
+              "required": true,
+              "notes": "Accounts Payable: $555,682"
+            },
+            "short_term_debt": {
+              "value": 1209602.0,
+              "tolerance_percent": 5.0,
+              "required": false,
+              "notes": "Credit Cards: $100,353 + Lines Of Credit: $1,109,249"
+            },
+            "accrued_expenses": {
+              "value": 89546.0,
+              "tolerance_percent": 5.0,
+              "required": false,
+              "notes": "Accrual: $89,546"
+            },
+            "deferred_revenue_current": {
+              "value": null,
+              "tolerance_percent": 5.0,
+              "required": false,
+              "notes": "Not present in document"
+            },
+            "other_current_liabilities": {
+              "value": 15190.0,
+              "tolerance_percent": 5.0,
+              "required": false,
+              "notes": "Taxes Payable: $478 + Other Current Liabilities: $14,712"
+            },
+            "total_current_liabilities": {
+              "value": 1870021.0,
+              "tolerance_percent": 5.0,
+              "required": true,
+              "notes": "Total Current Liabilities: $1,870,021"
+            },
+            "long_term_debt": {
+              "value": 2290523.0,
+              "tolerance_percent": 5.0,
+              "required": false,
+              "notes": "Long Term Investor Loan: $620,574 + Note Payable - Owner/Investor: $1,526,911 + Vehicle Loan: $143,038"
+            },
+            "deferred_tax_liabilities": {
+              "value": null,
+              "tolerance_percent": 5.0,
+              "required": false,
+              "notes": "Not present in document"
+            },
+            "pension_liabilities": {
+              "value": null,
+              "tolerance_percent": 5.0,
+              "required": false,
+              "notes": "Not present in document"
+            },
+            "other_non_current_liabilities": {
+              "value": null,
+              "tolerance_percent": 5.0,
+              "required": false,
+              "notes": "Not present in document"
+            },
+            "total_non_current_liabilities": {
+              "value": 2290523.0,
+              "tolerance_percent": 5.0,
+              "required": true,
+              "notes": "Total Long Term Liabilities: $2,290,523"
+            },
+            "total_liabilities": {
+              "value": 4160544.0,
+              "tolerance_percent": 5.0,
+              "required": true,
+              "notes": "Calculated: Total Current Liabilities ($1,870,021) + Total Long Term Liabilities ($2,290,523) = $4,160,544"
+            },
+            "common_stock": {
+              "value": null,
+              "tolerance_percent": 5.0,
+              "required": false,
+              "notes": "Not present - LLC structure uses member equity"
+            },
+            "additional_paid_in_capital": {
+              "value": 332443.0,
+              "tolerance_percent": 5.0,
+              "required": false,
+              "notes": "Opening Equity: $546,316 + Owners Investment: ($213,873)"
+            },
+            "retained_earnings": {
+              "value": 1177786.0,
+              "tolerance_percent": 5.0,
+              "required": false,
+              "notes": "Retained Earnings: $1,177,786"
+            },
+            "treasury_stock": {
+              "value": null,
+              "tolerance_percent": 5.0,
+              "required": false,
+              "notes": "Not present in document"
+            },
+            "accumulated_other_comprehensive_income": {
+              "value": null,
+              "tolerance_percent": 5.0,
+              "required": false,
+              "notes": "Not present in document"
+            },
+            "total_shareholders_equity": {
+              "value": 1932891.0,
+              "tolerance_percent": 5.0,
+              "required": true,
+              "notes": "Total Equity: $1,932,891"
+            },
+            "total_liabilities_and_equity": {
+              "value": 6093435.0,
+              "tolerance_percent": 5.0,
+              "required": true,
+              "notes": "Total Liabilities & Equity: $6,093,435"
+            }
+          }
+        }
+      ]
+    }
+  ]
+}

@@ -3,17 +3,18 @@ import { Header } from './components/Header';
 import { UploadPage } from './components/UploadPage';
 import { SpreadingView } from './components/SpreadingView';
 import { DebugPanel } from './components/DebugPanel';
-import { api, wsManager } from './api';
+import { TestingPage } from './components/testing/TestingPage';
+import { api } from './api';
+import { connectionManager, ConnectionStatus, WebSocketMessage as CMWebSocketMessage } from './utils/connectionManager';
 import { 
   SpreadResponse, 
   DocType, 
   FileUploadItem, 
   LogEntry, 
   ProcessingStep, 
-  WebSocketMessage,
-  BatchSpreadResponse 
 } from './types';
-import { AlertCircle, FileText, CheckCircle, XCircle, ArrowLeft, Power } from 'lucide-react';
+import { UploadOptions } from './components/UploadPage';
+import { AlertCircle, CheckCircle, XCircle, ArrowLeft, RefreshCw, Wifi, WifiOff } from 'lucide-react';
 
 interface SingleResult {
   result: SpreadResponse;
@@ -35,36 +36,57 @@ type AppState =
   | { status: 'success'; mode: 'batch'; data: BatchResultItem[]; selectedIndex: number }
   | { status: 'error'; error: string };
 
+type PageType = 'home' | 'testing';
+
 function App() {
+  const [currentPage, setCurrentPage] = useState<PageType>('home');
   const [state, setState] = useState<AppState>({ status: 'upload' });
   const [debugOpen, setDebugOpen] = useState(false);
   const [logs, setLogs] = useState<LogEntry[]>([]);
   const [steps, setSteps] = useState<ProcessingStep[]>([]);
-  const [wsConnected, setWsConnected] = useState(false);
-  const [startingBackend, setStartingBackend] = useState(false);
+  const [connectionStatus, setConnectionStatus] = useState<ConnectionStatus>(connectionManager.getStatus());
+  const [isReconnecting, setIsReconnecting] = useState(false);
   const logIdCounter = useRef(0);
+  const lastConnectionState = useRef<string | null>(null);
 
-  // Connect to WebSocket on mount
+  // Connect to backend on mount using unified connection manager
   useEffect(() => {
-    wsManager.connect();
+    connectionManager.start();
 
-    const unsubMessage = wsManager.onMessage((message: WebSocketMessage) => {
+    const unsubMessage = connectionManager.onMessage((message: CMWebSocketMessage) => {
       handleWebSocketMessage(message);
     });
 
-    const unsubConnection = wsManager.onConnectionChange((connected) => {
-      setWsConnected(connected);
-      if (connected) {
-        addLocalLog('info', 'Connected to server');
-      } else {
-        addLocalLog('warning', 'Disconnected from server');
+    const unsubStatus = connectionManager.onStatusChange((status) => {
+      setConnectionStatus(status);
+      
+      // Log connection state changes (but not every status update)
+      if (lastConnectionState.current !== status.state) {
+        lastConnectionState.current = status.state;
+        
+        switch (status.state) {
+          case 'connected':
+            addLocalLog('info', 'Connected to server');
+            break;
+          case 'degraded':
+            addLocalLog('warning', 'Connection degraded - WebSocket disconnected');
+            break;
+          case 'reconnecting':
+            if (status.reconnectAttempt === 1) {
+              addLocalLog('warning', 'Connection lost - attempting to reconnect...');
+            }
+            break;
+          case 'disconnected':
+            addLocalLog('error', `Backend unavailable: ${status.error || 'Unknown error'}`);
+            break;
+        }
       }
     });
 
     return () => {
       unsubMessage();
-      unsubConnection();
-      wsManager.disconnect();
+      unsubStatus();
+      connectionManager.stop();
     };
   }, []);
 
@@ -80,9 +102,9 @@ function App() {
     setLogs(prev => [...prev, entry]);
   }, []);
 
-  const handleWebSocketMessage = useCallback((message: WebSocketMessage) => {
+  const handleWebSocketMessage = useCallback((message: CMWebSocketMessage) => {
     switch (message.type) {
-      case 'log':
+      case 'log': {
         const logPayload = message.payload as LogEntry;
         setLogs(prev => {
           // Avoid duplicates
@@ -95,8 +117,9 @@ function App() {
           setDebugOpen(true);
         }
         break;
+      }
 
-      case 'step':
+      case 'step': {
         const stepPayload = message.payload as ProcessingStep;
         setSteps(prev => {
           const existing = prev.findIndex(s => s.id === stepPayload.id);
@@ -108,24 +131,27 @@ function App() {
           return [...prev, stepPayload];
         });
         break;
+      }
 
-      case 'progress':
+      case 'progress': {
         // Handle batch progress updates
         const progress = message.payload as { current?: number; total?: number; status?: string };
         if (progress.current && progress.total) {
           addLocalLog('info', `Processing file ${progress.current}/${progress.total}`);
         }
         break;
+      }
 
-      case 'error':
+      case 'error': {
         const errorPayload = message.payload as { message?: string };
         addLocalLog('error', errorPayload.message || 'Unknown error occurred');
         setDebugOpen(true);
         break;
+      }
     }
   }, [addLocalLog]);
 
-  const handleUpload = async (files: FileUploadItem[]) => {
+  const handleUpload = async (files: FileUploadItem[], options?: UploadOptions) => {
     // Clear previous steps
     setSteps([]);
     
@@ -137,7 +163,8 @@ function App() {
     
     setState({ status: 'processing', files: processingFiles });
     addLocalLog('info', `Starting processing of ${files.length} file(s)`, {
-      filenames: files.map(f => f.file.name)
+      filenames: files.map(f => f.file.name),
+      model: options?.modelOverride || 'default'
     });
 
     try {
@@ -147,6 +174,7 @@ function App() {
         const result = await api.spreadFinancialStatement({
           file: file.file,
           doc_type: file.docType,
+          model_override: options?.modelOverride,
         });
 
         if (result.success && result.data) {
@@ -166,7 +194,9 @@ function App() {
         }
       } else {
         // Batch processing
-        const batchResult = await api.spreadBatch(files);
+        const batchResult = await api.spreadBatch(files, {
+          model_override: options?.modelOverride,
+        });
         
         addLocalLog('info', `Batch processing complete: ${batchResult.completed}/${batchResult.total_files} successful`);
         
@@ -237,39 +267,50 @@ function App() {
     setSteps([]);
   };
 
-  const handleStartBackend = async () => {
-    setStartingBackend(true);
+  const handleReconnect = async () => {
+    setIsReconnecting(true);
+    addLocalLog('info', 'Manual reconnect initiated...');
     try {
-      const result = await api.startBackend();
-      if (result.success) {
-        addLocalLog('info', 'Backend startup initiated. Waiting for connection...');
-        // Try to reconnect after a short delay
-        setTimeout(() => {
-          wsManager.connect();
-        }, 2000);
-      } else {
-        addLocalLog('error', result.message || 'Failed to start backend');
-      }
-    } catch (error: any) {
-      console.error('Failed to start backend:', error);
-      addLocalLog('error', `Failed to start backend: ${error.message || 'Startup service may not be running'}`);
+      await connectionManager.reconnect();
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : 'Unknown error';
+      console.error('Reconnect failed:', error);
+      addLocalLog('error', `Reconnect failed: ${message}`);
     } finally {
-      setStartingBackend(false);
+      setIsReconnecting(false);
     }
+  };
+
+  const handleNavigateToTesting = () => {
+    setCurrentPage('testing');
+  };
+
+  const handleNavigateToHome = () => {
+    setCurrentPage('home');
   };
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-50 via-white to-emerald-50/30">
-      <Header />
+      <Header 
+        onNavigateToTesting={handleNavigateToTesting}
+        onNavigateToHome={handleNavigateToHome}
+        currentPage={currentPage}
+      />
 
-      {state.status === 'upload' && (
+      {/* Testing Page */}
+      {currentPage === 'testing' && (
+        <TestingPage onBack={handleNavigateToHome} />
+      )}
+
+      {/* Home Page Content */}
+      {currentPage === 'home' && state.status === 'upload' && (
         <UploadPage 
           onUpload={handleUpload} 
           isProcessing={false} 
         />
       )}
 
-      {state.status === 'processing' && (
+      {currentPage === 'home' && state.status === 'processing' && (
         <UploadPage 
           onUpload={handleUpload} 
           isProcessing={true}
@@ -277,7 +318,7 @@ function App() {
         />
       )}
 
-      {state.status === 'success' && state.mode === 'single' && state.data.result.data && (
+      {currentPage === 'home' && state.status === 'success' && state.mode === 'single' && state.data.result.data && (
         <SpreadingView
           data={state.data.result.data}
           metadata={state.data.result.metadata}
@@ -286,7 +327,7 @@ function App() {
         />
       )}
 
-      {state.status === 'success' && state.mode === 'batch' && (
+      {currentPage === 'home' && state.status === 'success' && state.mode === 'batch' && (
         <BatchResultsView
           results={state.data}
           selectedIndex={state.selectedIndex}
@@ -295,7 +336,7 @@ function App() {
         />
       )}
 
-      {state.status === 'error' && (
+      {currentPage === 'home' && state.status === 'error' && (
         <div className="min-h-[calc(100vh-80px)] flex items-center justify-center p-8">
           <div className="max-w-lg w-full bg-white border border-red-200 rounded-2xl p-8 shadow-lg shadow-red-500/5">
             <div className="flex flex-col items-center text-center">
@@ -336,32 +377,113 @@ function App() {
         onClear={handleClearLogs}
       />
 
-      {/* WebSocket Connection Indicator */}
-      <div className="fixed bottom-6 left-6 flex items-center gap-2">
-        <div className={`flex items-center gap-2 px-3 py-1.5 rounded-full text-xs font-medium transition-all ${
-          wsConnected 
-            ? 'bg-emerald-100 text-emerald-700' 
-            : 'bg-amber-100 text-amber-700'
-        }`}>
-          <span className={`w-2 h-2 rounded-full ${wsConnected ? 'bg-emerald-500' : 'bg-amber-500 animate-pulse'}`} />
-          {wsConnected ? 'Connected' : 'Reconnecting...'}
-        </div>
-        {!wsConnected && (
-          <button
-            onClick={handleStartBackend}
-            disabled={startingBackend}
-            className={`flex items-center gap-2 px-3 py-1.5 rounded-full text-xs font-medium transition-all ${
-              startingBackend
-                ? 'bg-gray-100 text-gray-500 cursor-not-allowed'
-                : 'bg-blue-100 text-blue-700 hover:bg-blue-200'
-            }`}
-            title="Start Backend Server"
-          >
-            <Power className={`w-3 h-3 ${startingBackend ? 'animate-spin' : ''}`} />
-            {startingBackend ? 'Starting...' : 'Start Backend'}
-          </button>
-        )}
+      {/* Connection Status Indicator */}
+      <ConnectionIndicator 
+        status={connectionStatus} 
+        onReconnect={handleReconnect}
+        isReconnecting={isReconnecting}
+      />
+    </div>
+  );
+}
+
+// =============================================================================
+// CONNECTION INDICATOR COMPONENT
+// =============================================================================
+
+interface ConnectionIndicatorProps {
+  status: ConnectionStatus;
+  onReconnect: () => void;
+  isReconnecting: boolean;
+}
+
+const ConnectionIndicator: React.FC<ConnectionIndicatorProps> = ({
+  status,
+  onReconnect,
+  isReconnecting,
+}) => {
+  const getStatusConfig = () => {
+    switch (status.state) {
+      case 'connected':
+        return {
+          bgColor: 'bg-emerald-100',
+          textColor: 'text-emerald-700',
+          dotColor: 'bg-emerald-500',
+          icon: <Wifi className="w-3 h-3" />,
+          label: status.latencyMs ? `Connected (${status.latencyMs}ms)` : 'Connected',
+          showReconnect: false,
+          animate: false,
+        };
+      case 'degraded':
+        return {
+          bgColor: 'bg-amber-100',
+          textColor: 'text-amber-700',
+          dotColor: 'bg-amber-500',
+          icon: <Wifi className="w-3 h-3" />,
+          label: 'Degraded - WS reconnecting',
+          showReconnect: true,
+          animate: true,
+        };
+      case 'reconnecting':
+        return {
+          bgColor: 'bg-amber-100',
+          textColor: 'text-amber-700',
+          dotColor: 'bg-amber-500',
+          icon: <RefreshCw className="w-3 h-3 animate-spin" />,
+          label: status.reconnectAttempt > 0 
+            ? `Reconnecting (attempt ${status.reconnectAttempt})...` 
+            : 'Reconnecting...',
+          showReconnect: true,
+          animate: true,
+        };
+      case 'disconnected':
+        return {
+          bgColor: 'bg-red-100',
+          textColor: 'text-red-700',
+          dotColor: 'bg-red-500',
+          icon: <WifiOff className="w-3 h-3" />,
+          label: 'Disconnected',
+          showReconnect: true,
+          animate: false,
+        };
+    }
+  };
+
+  const config = getStatusConfig();
+
+  return (
+    <div className="fixed bottom-6 left-6 flex items-center gap-2">
+      <div 
+        className={`flex items-center gap-2 px-3 py-1.5 rounded-full text-xs font-medium transition-all ${config.bgColor} ${config.textColor}`}
+        title={status.error || undefined}
+      >
+        <span className={`w-2 h-2 rounded-full ${config.dotColor} ${config.animate ? 'animate-pulse' : ''}`} />
+        {config.icon}
+        <span>{config.label}</span>
       </div>
+      
+      {config.showReconnect && (
+        <button
+          onClick={onReconnect}
+          disabled={isReconnecting}
+          className={`flex items-center gap-2 px-3 py-1.5 rounded-full text-xs font-medium transition-all ${
+            isReconnecting
+              ? 'bg-gray-100 text-gray-500 cursor-not-allowed'
+              : 'bg-blue-100 text-blue-700 hover:bg-blue-200 active:bg-blue-300'
+          }`}
+          title={status.error ? `Last error: ${status.error}` : 'Click to reconnect'}
+        >
+          <RefreshCw className={`w-3 h-3 ${isReconnecting ? 'animate-spin' : ''}`} />
+          {isReconnecting ? 'Reconnecting...' : 'Reconnect'}
+        </button>
+      )}
+      
+      {/* Show next retry countdown for reconnecting state */}
+      {status.state === 'reconnecting' && status.nextReconnectMs && status.nextReconnectMs > 2000 && (
+        <span className="text-xs text-gray-500">
+          Next try in {Math.ceil(status.nextReconnectMs / 1000)}s
+        </span>
+      )}
     </div>
   );
 }
@@ -456,7 +578,11 @@ const BatchResultsView: React.FC<BatchResultsViewProps> = ({
                         item.success ? 'text-emerald-600' : 'text-red-600'
                       }`}>
                         {item.success 
-                          ? `${item.docType === 'income' ? 'Income Statement' : 'Balance Sheet'}`
+                          ? item.docType === 'auto' 
+                            ? 'Auto-Detected' 
+                            : item.docType === 'income' 
+                              ? 'Income Statement' 
+                              : 'Balance Sheet'
                           : 'Failed'
                         }
                       </p>

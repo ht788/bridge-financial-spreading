@@ -1,0 +1,200 @@
+{
+  "_metadata": {
+    "description": "Original answer key format provided by user. This is a reference copy - the actual answer keys used by the test system are in the individual company files (lkc_answer_key.json, pneo_answer_key.json, fomin_answer_key.json).",
+    "imported_date": "2026-01-28",
+    "notes": [
+      "This format groups by company and statement type, while the test system groups by file",
+      "Derived fields (gross_profit, operating_income, net_income) were calculated and added to the converted files",
+      "FOMIN LLC had no income statement data in original - needs manual extraction"
+    ]
+  },
+  "companies": [
+    {
+      "company_name": "Lodging Kit Company",
+      "source_files": [
+        {
+          "file_name": "LKC 2022 Balance Sheet-combined.pdf",
+          "type": "pdf",
+          "notes": "Contains Balance Sheet (as of 12/31/22) and Profit & Loss Statement (1/1/22 to 12/31/22)"
+        },
+        {
+          "file_name": "2025 YTD Bal sh-LKC.pdf",
+          "type": "pdf",
+          "notes": "Balance Sheet as of 3/27/25 (no income statement)"
+        },
+        {
+          "file_name": "2025 YTD PL - LKC.pdf",
+          "type": "pdf",
+          "notes": "Profit & Loss Statement (1/1/25 to 3/27/25)"
+        },
+        {
+          "file_name": "LKC 2023 Balance Sheet.pdf",
+          "type": "pdf",
+          "notes": "Balance Sheet as of 12/31/23 (no income statement)"
+        },
+        {
+          "file_name": "LKC 2023 PL Stmt.pdf",
+          "type": "pdf",
+          "notes": "Profit & Loss Statement (1/1/23 to 12/31/23)"
+        },
+        {
+          "file_name": "LKC 2024 Balance Sheet.pdf",
+          "type": "pdf",
+          "notes": "Balance Sheet as of 12/31/24 (no income statement)"
+        },
+        {
+          "file_name": "LKC 2024 PL Stmt.pdf",
+          "type": "pdf",
+          "notes": "Profit & Loss Statement (1/1/24 to 12/31/24)"
+        }
+      ],
+      "statements": [
+        {
+          "statement_type": "income_statement",
+          "currency": "USD",
+          "scale": "units",
+          "periods": [
+            {
+              "period_label": "1/1/25 to 3/27/25",
+              "normalized_period_label": "2025-01-01_to_2025-03-27",
+              "values": {
+                "revenue": {"value": 5785259.61, "confidence": 0.99},
+                "cogs": {"value": 3277066.63, "confidence": 0.99},
+                "sga": {"value": 2185415.93, "confidence": 0.95},
+                "rd": {"value": null, "confidence": 1},
+                "other_opex": {"value": null, "confidence": 1},
+                "da": {"value": 9713.48, "confidence": 0.93},
+                "interest_expense": {"value": 11909.82, "confidence": 0.95},
+                "interest_income": {"value": 109.99, "confidence": 0.99},
+                "other_non_op_income": {"value": 3530.87, "confidence": 0.93},
+                "other_non_op_expense": {"value": 473.94, "confidence": 0.99},
+                "income_tax_expense": {"value": null, "confidence": 1}
+              }
+            },
+            {
+              "period_label": "1/1/24 to 12/31/24",
+              "normalized_period_label": "2024-01-01_to_2024-12-31",
+              "values": {
+                "revenue": {"value": 27427473.47, "confidence": 0.99},
+                "cogs": {"value": 15660800.25, "confidence": 0.99},
+                "sga": {"value": 9882571.06, "confidence": 0.95},
+                "rd": {"value": null, "confidence": 1},
+                "other_opex": {"value": null, "confidence": 1},
+                "da": {"value": 50387.61, "confidence": 0.93},
+                "interest_expense": {"value": 41737.6, "confidence": 0.95},
+                "interest_income": {"value": 30806.43, "confidence": 0.99},
+                "other_non_op_income": {"value": 87424.48, "confidence": 0.93},
+                "other_non_op_expense": {"value": 1895.76, "confidence": 0.99},
+                "income_tax_expense": {"value": 1000, "confidence": 0.98}
+              }
+            },
+            {
+              "period_label": "1/1/23 to 12/31/23",
+              "normalized_period_label": "2023-01-01_to_2023-12-31",
+              "values": {
+                "revenue": {"value": 25402908.73, "confidence": 0.99},
+                "cogs": {"value": 14416534.88, "confidence": 0.99},
+                "sga": {"value": 9059135.67, "confidence": 0.95},
+                "rd": {"value": null, "confidence": 1},
+                "other_opex": {"value": null, "confidence": 1},
+                "da": {"value": 276365.85, "confidence": 0.93},
+                "interest_expense": {"value": 48760.91, "confidence": 0.95},
+                "interest_income": {"value": 21897.65, "confidence": 0.99},
+                "other_non_op_income": {"value": 28275.07, "confidence": 0.93},
+                "other_non_op_expense": {"value": 1895.76, "confidence": 0.99},
+                "income_tax_expense": {"value": 3056.26, "confidence": 0.95}
+              }
+            },
+            {
+              "period_label": "1/1/22 to 12/31/22",
+              "normalized_period_label": "2022-01-01_to_2022-12-31",
+              "values": {
+                "revenue": {"value": 25468862.21, "confidence": 0.99},
+                "cogs": {"value": 15102564.51, "confidence": 0.99},
+                "sga": {"value": 8690662.7, "confidence": 0.95},
+                "rd": {"value": null, "confidence": 1},
+                "other_opex": {"value": null, "confidence": 1},
+                "da": {"value": 53259.87, "confidence": 0.93},
+                "interest_expense": {"value": 50051.82, "confidence": 0.95},
+                "interest_income": {"value": null, "confidence": 1},
+                "other_non_op_income": {"value": 46311.13, "confidence": 0.93},
+                "other_non_op_expense": {"value": 1995.76, "confidence": 0.99},
+                "income_tax_expense": {"value": -26119.27, "confidence": 0.93}
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "company_name": "pNeo LLC",
+      "source_files": [
+        {
+          "file_name": "2024_Q4_pNeo_Consolidated_Financial_Reports.pdf",
+          "type": "pdf",
+          "notes": "Consolidated report; includes Balance Sheet (12/31/24), P&L (Jan-Dec 2024), and aging schedules"
+        },
+        {
+          "file_name": "FY_2023_pNeo_Financial_Packet.pdf",
+          "type": "pdf",
+          "notes": "FY2023 overview with combined Income Statement and Balance Sheet summary"
+        }
+      ],
+      "statements": [
+        {
+          "statement_type": "income_statement",
+          "currency": "USD",
+          "scale": "units",
+          "periods": [
+            {
+              "period_label": "January-2024 to December-2024",
+              "normalized_period_label": "2024-01_to_2024-12",
+              "values": {
+                "revenue": {"value": 6516729, "confidence": 0.99},
+                "cogs": {"value": 3210117, "confidence": 0.99},
+                "sga": {"value": 2713503, "confidence": 0.95},
+                "rd": {"value": 60322, "confidence": 0.99},
+                "other_opex": {"value": 159455, "confidence": 0.99},
+                "da": {"value": 587926, "confidence": 0.93},
+                "interest_expense": {"value": 159415, "confidence": 0.98},
+                "interest_income": {"value": null, "confidence": 1},
+                "other_non_op_income": {"value": null, "confidence": 1},
+                "other_non_op_expense": {"value": null, "confidence": 1},
+                "income_tax_expense": {"value": null, "confidence": 1}
+              }
+            },
+            {
+              "period_label": "2023 Financial Overview",
+              "normalized_period_label": "FY2023",
+              "values": {
+                "revenue": {"value": 7916624, "confidence": 0.99},
+                "cogs": {"value": 3317672, "confidence": 0.99},
+                "sga": {"value": 3293872, "confidence": 0.95},
+                "rd": {"value": 106353, "confidence": 0.99},
+                "other_opex": {"value": 194224, "confidence": 0.99},
+                "da": {"value": 519989, "confidence": 0.93},
+                "interest_expense": {"value": 110348, "confidence": 0.98},
+                "interest_income": {"value": null, "confidence": 1},
+                "other_non_op_income": {"value": null, "confidence": 1},
+                "other_non_op_expense": {"value": 8, "confidence": 0.98},
+                "income_tax_expense": {"value": -48505, "confidence": 0.98}
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "company_name": "FOMIN LLC",
+      "source_files": [
+        {
+          "file_name": "FOMIN+LLC_Balance+Sheet--.pdf",
+          "type": "pdf",
+          "notes": "Balance Sheet (As of January 31, 2025) with comparative column for Jan-Dec 2024; no income statement in file"
+        }
+      ],
+      "statements": []
+    }
+  ],
+  "unassigned_files": []
+}

@@ -1,0 +1,59 @@
+{
+  "company_id": "fomin",
+  "company_name": "FOMIN LLC",
+  "files": [
+    {
+      "filename": "FOMIN+LLC_Profit+and+Loss--.pdf",
+      "doc_type": "income",
+      "periods": [
+        {
+          "period_label": "Jan-Dec 2024",
+          "doc_type": "income",
+          "expected": {
+            "revenue": {"value": null, "tolerance_percent": 5.0, "required": true, "notes": "TODO: Extract Total Income from 2024 column"},
+            "cogs": {"value": null, "tolerance_percent": 5.0, "required": true, "notes": "Cost of Goods Sold"},
+            "gross_profit": {"value": null, "tolerance_percent": 5.0, "required": true, "notes": "Revenue - COGS"},
+            "sga": {"value": null, "tolerance_percent": 5.0, "required": false, "notes": "Operating expenses"},
+            "total_operating_expenses": {"value": null, "tolerance_percent": 5.0, "required": true},
+            "operating_income": {"value": null, "tolerance_percent": 5.0, "required": true},
+            "interest_expense": {"value": null, "tolerance_percent": 5.0, "required": false},
+            "net_income": {"value": null, "tolerance_percent": 5.0, "required": true}
+          }
+        },
+        {
+          "period_label": "Jan 2025",
+          "doc_type": "income",
+          "expected": {
+            "revenue": {"value": null, "tolerance_percent": 5.0, "required": true, "notes": "TODO: Extract Total Income from Jan 2025 column"},
+            "cogs": {"value": null, "tolerance_percent": 5.0, "required": true},
+            "gross_profit": {"value": null, "tolerance_percent": 5.0, "required": true},
+            "sga": {"value": null, "tolerance_percent": 5.0, "required": false},
+            "total_operating_expenses": {"value": null, "tolerance_percent": 5.0, "required": true},
+            "operating_income": {"value": null, "tolerance_percent": 5.0, "required": true},
+            "interest_expense": {"value": null, "tolerance_percent": 5.0, "required": false},
+            "net_income": {"value": null, "tolerance_percent": 5.0, "required": true}
+          }
+        }
+      ]
+    },
+    {
+      "filename": "FOMIN+LLC_Balance+Sheet--.pdf",
+      "doc_type": "balance",
+      "periods": [
+        {
+          "period_label": "Jan 2025",
+          "doc_type": "balance",
+          "expected": {
+            "cash_and_equivalents": {"value": null, "tolerance_percent": 5.0, "required": true, "notes": "TODO: Extract from source as of Jan 31, 2025"},
+            "total_current_assets": {"value": null, "tolerance_percent": 5.0, "required": true},
+            "total_assets": {"value": null, "tolerance_percent": 5.0, "required": true},
+            "total_current_liabilities": {"value": null, "tolerance_percent": 5.0, "required": true},
+            "total_liabilities": {"value": null, "tolerance_percent": 5.0, "required": true},
+            "total_shareholders_equity": {"value": null, "tolerance_percent": 5.0, "required": true},
+            "total_liabilities_and_equity": {"value": null, "tolerance_percent": 5.0, "required": true}
+          }
+        }
+      ]
+    }
+  ]
+}

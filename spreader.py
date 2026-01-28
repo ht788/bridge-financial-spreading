@@ -30,13 +30,39 @@ Architecture:
 
 import logging
 import os
+import asyncio
 from typing import Optional, Union, List, Any, Tuple
 from dataclasses import dataclass
+from pathlib import Path
+from datetime import datetime
+
+# Load environment variables from repo root .env
+from dotenv import load_dotenv
+
+def _load_env_vars() -> None:
+    repo_root = Path(__file__).resolve().parent
+    env_path = repo_root / ".env"
+    logger = logging.getLogger(__name__)
+    if env_path.exists():
+        load_dotenv(env_path, override=True)
+        logger.info("[ENV] Loaded .env from %s", env_path)
+    else:
+        load_dotenv(override=True)
+        logger.warning("[ENV] .env not found at %s", env_path)
+
+    # Log presence only, never the value
+    if os.getenv("ANTHROPIC_API_KEY"):
+        logger.info("[ENV] ANTHROPIC_API_KEY is set")
+    else:
+        logger.warning("[ENV] ANTHROPIC_API_KEY is missing")
+
+_load_env_vars()
 
 from langchain_core.messages import HumanMessage, SystemMessage
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.runnables import RunnableConfig, Runnable
 from langchain_openai import ChatOpenAI
+from langchain_anthropic import ChatAnthropic
 from langsmith import traceable
 from langsmith.run_helpers import get_current_run_tree
 from pydantic import BaseModel, ValidationError, Field
@@ -52,6 +78,8 @@ from models import (
     IncomeStatementPeriod,
     BalanceSheetPeriod,
     get_multi_period_extraction_schema,
+    StatementTypeDetection,
+    CombinedFinancialExtraction,
 )
 from utils import (
     pdf_to_base64_images,
@@ -60,6 +88,13 @@ from utils import (
     estimate_token_count,
     excel_to_markdown
 )
+from model_config import (
+    get_model_by_id,
+    get_default_model,
+    validate_model_for_spreading,
+    ModelProvider
+)
+from period_utils import standardize_period_label, get_period_type
 
 # Configure logging
 logger = logging.getLogger(__name__)
@@ -163,6 +198,8 @@ def _detect_fiscal_period(
     detection_system = (
         "You are an expert at reading financial statement headers from images.\n"
         "Goal: identify ALL reporting period columns shown in the statement.\n\n"
+        "IMPORTANT: The document may span multiple pages. Look at ALL provided page images.\n"
+        "Financial data may not start on the first page - cover pages, commentary, or executive summaries may precede the actual financial tables.\n\n"
         "CRITICAL: Financial statements often show MULTIPLE periods for comparison. Look for:\n"
         "- Side-by-side columns (e.g., 'Jan-Dec 2024' | 'Jan 2025')\n"
         "- Year-over-year comparisons (e.g., '2024' | '2023')\n"
@@ -204,15 +241,16 @@ def _detect_fiscal_period(
         )
         return structured.invoke(messages, config=config)
 
-    # First pass: first page
-    first_pass = _invoke_detection(base64_images[:1])
+    # First pass: first two pages (handles cover pages/commentary on first page)
+    initial_pages = min(2, len(base64_images))
+    first_pass = _invoke_detection(base64_images[:initial_pages])
     best = (first_pass.best_period or "").strip()
     if best and first_pass.confidence >= 0.70:
         return best, first_pass
 
-    # Second pass: first two pages (if available)
-    if len(base64_images) > 1:
-        second_pass = _invoke_detection(base64_images[:2])
+    # Second pass: first three pages (if available and low confidence)
+    if len(base64_images) > initial_pages:
+        second_pass = _invoke_detection(base64_images[:min(3, len(base64_images))])
         best2 = (second_pass.best_period or "").strip()
         if best2 and second_pass.confidence >= (first_pass.confidence or 0.0):
             return best2, second_pass
@@ -221,6 +259,117 @@ def _detect_fiscal_period(
     if best:
         return best, first_pass
     return requested_period, first_pass
+
+
+# =============================================================================
+# STATEMENT TYPE DETECTION (Auto-Detection)
+# =============================================================================
+
+@traceable(
+    name="detect_statement_types",
+    tags=["statement-detection", "vision", "auto-detect"],
+    metadata={"operation": "detect_statement_types"}
+)
+def _detect_statement_types(
+    *,
+    base64_images: List[tuple],
+    model_name: str,
+    model_kwargs: Optional[dict],
+) -> StatementTypeDetection:
+    """
+    Detect which types of financial statements are present in the document.
+    
+    Uses vision model to analyze document pages and identify:
+    - Income Statement / Profit & Loss
+    - Balance Sheet / Statement of Financial Position
+    
+    Args:
+        base64_images: List of (base64_data, media_type) tuples
+        model_name: Model to use for detection
+        model_kwargs: Additional model parameters
+        
+    Returns:
+        StatementTypeDetection with detected statement types and page locations
+    """
+    if not base64_images:
+        logger.warning("[DETECT] No images provided for statement type detection")
+        return StatementTypeDetection(
+            has_income_statement=False,
+            has_balance_sheet=False,
+            confidence=0.0,
+            notes="No images provided"
+        )
+    
+    detection_system = (
+        "You are an expert at identifying financial statement types from document images.\n\n"
+        "TASK: Analyze the provided document pages and identify which financial statements are present.\n\n"
+        "INCOME STATEMENT / PROFIT & LOSS INDICATORS:\n"
+        "- Headers: 'Income Statement', 'Profit and Loss', 'P&L Statement', 'Statement of Operations', "
+        "'Statement of Earnings', 'Profit and Loss Statement'\n"
+        "- Key rows: 'Revenue', 'Net Sales', 'Total Revenue', 'Gross Profit', 'Operating Income', "
+        "'Net Income', 'EBITDA', 'Cost of Goods Sold', 'Operating Expenses', 'Total Expenses'\n"
+        "- Structure: Shows revenue at top, expenses in middle, net income at bottom\n\n"
+        "BALANCE SHEET INDICATORS:\n"
+        "- Headers: 'Balance Sheet', 'Statement of Financial Position', 'Consolidated Balance Sheet'\n"
+        "- Key rows: 'Total Assets', 'Total Liabilities', 'Shareholders Equity', 'Current Assets', "
+        "'Fixed Assets', 'Current Liabilities', 'Long Term Liabilities', 'Total Liabilities and Equity'\n"
+        "- Structure: Assets section, Liabilities section, Equity section\n"
+        "- Key equation: Assets = Liabilities + Equity\n\n"
+        "IMPORTANT RULES:\n"
+        "1. A document CAN contain BOTH statement types - this is common in financial packets\n"
+        "2. Report ALL pages where each statement type appears (1-indexed page numbers)\n"
+        "3. If statements are side-by-side on same page, report that page for both types\n"
+        "4. Other financial reports (A/R aging, A/P aging, inventory reports) are NOT income statements or balance sheets\n"
+        "5. Cover pages, executive summaries, and commentary are NOT financial statements\n"
+        "6. Set confidence based on how clearly the statement type is identifiable\n"
+    )
+    
+    # Analyze up to first 6 pages (should cover most financial packets)
+    pages_to_analyze = min(6, len(base64_images))
+    
+    text_prompt = (
+        f"Analyze these {pages_to_analyze} pages and identify which financial statements are present.\n"
+        f"For each statement type found, list the page numbers (1-indexed) where it appears.\n"
+        f"A single document often contains BOTH income statement AND balance sheet.\n"
+        f"Ignore other report types like aging summaries, inventory reports, etc."
+    )
+    
+    llm = create_llm(model_name=model_name, model_kwargs=model_kwargs)
+    structured_llm = llm.with_structured_output(StatementTypeDetection)
+    
+    human_content = create_vision_message_content(text_prompt, base64_images[:pages_to_analyze])
+    messages = [
+        SystemMessage(content=detection_system),
+        HumanMessage(content=human_content),
+    ]
+    
+    config = get_runnable_config(
+        run_name="detect_statement_types",
+        tags=["statement-detection", "vision-input", f"pages:{pages_to_analyze}"],
+        metadata={"num_pages_analyzed": pages_to_analyze}
+    )
+    
+    try:
+        result = structured_llm.invoke(messages, config=config)
+        
+        logger.info(
+            f"[DETECT] Statement types detected: "
+            f"Income Statement={result.has_income_statement} (pages {result.income_statement_pages}), "
+            f"Balance Sheet={result.has_balance_sheet} (pages {result.balance_sheet_pages}), "
+            f"Confidence={result.confidence:.2f}"
+        )
+        
+        return result
+        
+    except Exception as e:
+        logger.error(f"[DETECT] Failed to detect statement types: {e}")
+        # Return empty detection on failure
+        return StatementTypeDetection(
+            has_income_statement=False,
+            has_balance_sheet=False,
+            confidence=0.0,
+            notes=f"Detection failed: {str(e)}"
+        )
 
 
 # =============================================================================
@@ -282,6 +431,8 @@ def _classify_columns(
     """
     classification_system = (
         "You are a financial statement column classifier.\n\n"
+        "IMPORTANT: The document may span multiple pages. Look at ALL provided page images to find column headers.\n"
+        "Financial data may not start on the first page - cover pages, commentary, or executive summaries may precede the actual financial tables.\n\n"
         "TASK: Identify which columns represent REAL REPORTING PERIODS vs ROLLUP/SUMMARY columns.\n\n"
         "ROLLUP INDICATORS (classify as rollup_columns):\n"
         "- Column header contains: 'Total', 'Sum', 'Combined', 'Grand Total', 'YTD', 'Cumulative', 'Overall'\n"
@@ -306,8 +457,9 @@ def _classify_columns(
             candidate_info = f"\n\nPreviously detected column candidates: {labels}"
     
     text_prompt = (
-        f"Classify the columns in this {doc_type} statement image.\n"
+        f"Classify the columns in this {doc_type} statement (may span multiple pages).\n"
         f"{candidate_info}\n\n"
+        f"IMPORTANT: Look at ALL provided page images - financial data may not be on the first page.\n"
         f"Look at the column headers and classify each as either:\n"
         f"- A PERIOD column (real reporting period like 'Jan 2025', 'FY2024')\n"
         f"- A ROLLUP column (summary/total like 'Total', 'YTD')\n\n"
@@ -317,7 +469,9 @@ def _classify_columns(
     llm = create_llm(model_name=model_name, model_kwargs=model_kwargs)
     structured_llm = llm.with_structured_output(ColumnClassification)
     
-    human_content = create_vision_message_content(text_prompt, base64_images[:1])
+    # Use up to 3 pages for classification (handles cover pages/commentary on first page)
+    pages_for_classification = min(3, len(base64_images))
+    human_content = create_vision_message_content(text_prompt, base64_images[:pages_for_classification])
     messages = [
         SystemMessage(content=classification_system),
         HumanMessage(content=human_content),
@@ -325,14 +479,25 @@ def _classify_columns(
     
     config = get_runnable_config(
         run_name=f"classify_columns_{doc_type}",
-        tags=[f"doc_type:{doc_type}", "column-classification", "vision-input"],
-        metadata={"num_candidates": len(period_candidates) if period_candidates else 0}
+        tags=[f"doc_type:{doc_type}", "column-classification", "vision-input", f"pages:{pages_for_classification}"],
+        metadata={"num_candidates": len(period_candidates) if period_candidates else 0, "pages_analyzed": pages_for_classification}
     )
     
     result = structured_llm.invoke(messages, config=config)
     
+    # Standardize period labels for consistency
+    standardized_periods = []
+    for label in result.period_columns:
+        standardized = standardize_period_label(label)
+        standardized_periods.append(standardized)
+        if standardized != label:
+            logger.info(f"[COLUMN CLASSIFIER] Standardized period: '{label}' -> '{standardized}'")
+    
+    # Create a new result with standardized period labels
+    result.period_columns = standardized_periods
+    
     logger.info(
-        f"[COLUMN CLASSIFIER] Period columns: {result.period_columns}, "
+        f"[COLUMN CLASSIFIER] Period columns (standardized): {result.period_columns}, "
         f"Rollup columns: {result.rollup_columns}"
     )
     
@@ -856,14 +1021,25 @@ def get_model_config_from_environment() -> Tuple[str, dict]:
     Get model configuration from environment variables.
     
     Environment Variables:
-    - OPENAI_MODEL: Model name (default: gpt-5.2)
+    - OPENAI_MODEL: Model name (default: from model_config.py)
+    - ANTHROPIC_MODEL: Anthropic model name override
     - OPENAI_REASONING_EFFORT: Reasoning effort for o1/gpt-5.2 (default: high)
     
     Returns:
         Tuple of (model_name, model_kwargs)
     """
-    # Model name from environment, with gpt-5.2 as default for best reasoning
-    model = os.getenv("OPENAI_MODEL", "gpt-5.2")
+    # Try Anthropic model first (if ANTHROPIC_API_KEY is set)
+    if os.getenv("ANTHROPIC_API_KEY"):
+        anthropic_model = os.getenv("ANTHROPIC_MODEL")
+        if anthropic_model:
+            logger.info(f"Using Anthropic model from environment: {anthropic_model}")
+            return anthropic_model, {}
+    
+    # Fallback to OpenAI model
+    # Use default from model_config.py if not specified
+    from model_config import get_default_model
+    default_model = get_default_model()
+    model = os.getenv("OPENAI_MODEL", default_model.id)
     
     # Model kwargs
     model_kwargs = {}
@@ -887,9 +1063,9 @@ def get_model_config_from_environment() -> Tuple[str, dict]:
 def create_llm(
     model_name: Optional[str] = None,
     model_kwargs: Optional[dict] = None
-) -> ChatOpenAI:
+):
     """
-    Create ChatOpenAI instance WITHOUT hardcoded parameters.
+    Create LLM instance (OpenAI or Anthropic) based on model name.
     
     Parameters like temperature, max_tokens should be controlled via:
     1. LangSmith Hub prompt configuration
@@ -900,11 +1076,11 @@ def create_llm(
     to allow Hub/environment control.
     
     Args:
-        model_name: Optional model override (defaults to env/gpt-5.2)
+        model_name: Optional model override (defaults to env/default from config)
         model_kwargs: Optional additional model parameters
         
     Returns:
-        Configured ChatOpenAI instance
+        Configured ChatOpenAI or ChatAnthropic instance
     """
     # Get model from environment if not specified
     if model_name is None:
@@ -915,19 +1091,82 @@ def create_llm(
             # Merge env kwargs with passed kwargs (passed takes precedence)
             model_kwargs = {**env_kwargs, **model_kwargs}
     
-    # Build LLM config - NO hardcoded temperature or max_tokens
-    llm_config = {
-        "model": model_name,
-    }
+    # Validate model for spreading
+    is_valid, error_msg = validate_model_for_spreading(model_name)
+    if not is_valid:
+        logger.warning(f"Model validation warning: {error_msg}")
     
-    # Add model_kwargs if present (e.g., reasoning_effort)
-    if model_kwargs:
-        llm_config["model_kwargs"] = model_kwargs
+    # Get model definition
+    model_def = get_model_by_id(model_name)
     
-    logger.info(f"Creating LLM: {model_name} with kwargs: {model_kwargs}")
+    # Determine provider
+    if model_def:
+        provider = model_def.provider
+    else:
+        # Fallback: infer from model name
+        if "claude" in model_name.lower():
+            provider = ModelProvider.ANTHROPIC
+        else:
+            provider = ModelProvider.OPENAI
     
-    # ChatOpenAI automatically traces to LangSmith when LANGSMITH_API_KEY is set
-    return ChatOpenAI(**llm_config)
+    logger.info(f"Creating LLM: {model_name} (provider: {provider.value}) with kwargs: {model_kwargs}")
+    
+    # Create appropriate LLM instance
+    if provider == ModelProvider.ANTHROPIC:
+        # Get and validate Anthropic API key
+        anthropic_api_key = os.getenv("ANTHROPIC_API_KEY")
+        if not anthropic_api_key:
+            raise ValueError(
+                "ANTHROPIC_API_KEY not found in environment variables. "
+                "Please add it to your .env file: ANTHROPIC_API_KEY=sk-ant-..."
+            )
+        
+        # Create Anthropic LLM
+        llm_config = {
+            "model": model_name,
+            "api_key": anthropic_api_key,
+        }
+        
+        # Anthropic supports extended_thinking but not reasoning_effort
+        if model_kwargs:
+            filtered_kwargs = {}
+            for k, v in model_kwargs.items():
+                if k == "reasoning_effort":
+                    # Ignore reasoning_effort for Anthropic
+                    continue
+                elif k == "extended_thinking":
+                    # Map extended_thinking to Anthropic's thinking parameter
+                    if v:
+                        filtered_kwargs["thinking"] = {"type": "enabled", "budget_tokens": 10000}
+                else:
+                    filtered_kwargs[k] = v
+            
+            if filtered_kwargs:
+                llm_config["model_kwargs"] = filtered_kwargs
+        
+        # ChatAnthropic automatically traces to LangSmith when LANGSMITH_API_KEY is set
+        return ChatAnthropic(**llm_config)
+    else:
+        # Get and validate OpenAI API key
+        openai_api_key = os.getenv("OPENAI_API_KEY")
+        if not openai_api_key:
+            raise ValueError(
+                "OPENAI_API_KEY not found in environment variables. "
+                "Please add it to your .env file: OPENAI_API_KEY=sk-..."
+            )
+        
+        # Create OpenAI LLM
+        llm_config = {
+            "model": model_name,
+            "api_key": openai_api_key,
+        }
+        
+        # Add model_kwargs if present (e.g., reasoning_effort)
+        if model_kwargs:
+            llm_config["model_kwargs"] = model_kwargs
+        
+        # ChatOpenAI automatically traces to LangSmith when LANGSMITH_API_KEY is set
+        return ChatOpenAI(**llm_config)
 
 
 # =============================================================================
@@ -983,14 +1222,18 @@ def _invoke_llm_for_spreading(
     # Build the human message text with the period
     if retry_context:
         text_content = (
-            f"Analyze the visual layout of the attached financial statement images.\n"
+            f"Analyze ALL pages of the attached financial statement images.\n"
+            f"IMPORTANT: Financial data may appear on ANY page - do not focus only on the first page.\n"
+            f"Cover pages, commentary, or executive summaries may precede the actual financial tables.\n\n"
             f"Extract the data for the period ending {period} and map it to the JSON schema.\n\n"
             f"IMPORTANT: A previous extraction had errors:\n{retry_context}\n\n"
-            f"Please re-examine the images carefully and fix the mapping."
+            f"Please re-examine ALL images carefully and fix the mapping."
         )
     else:
         text_content = (
-            f"Analyze the visual layout of the attached financial statement images.\n"
+            f"Analyze ALL pages of the attached financial statement images.\n"
+            f"IMPORTANT: Financial data may appear on ANY page - do not focus only on the first page.\n"
+            f"Cover pages, commentary, or executive summaries may precede the actual financial tables.\n\n"
             f"Extract the data for the period ending {period} and map it to the JSON schema."
         )
     
@@ -1169,7 +1412,9 @@ def _invoke_llm_for_multi_period_spreading(
     
     # Build the human message text with enhanced instructions
     text_content = (
-        f"Analyze the visual layout of the attached financial statement images.\n"
+        f"Analyze ALL pages of the attached financial statement images.\n"
+        f"IMPORTANT: Financial data may appear on ANY page - do not focus only on the first page.\n"
+        f"Cover pages, commentary, or executive summaries may precede the actual financial tables.\n\n"
         f"Extract data for the specified PERIOD columns and map each to the JSON schema.\n"
         f"{column_instruction}\n\n"
         f"CRITICAL REQUIREMENTS:\n"
@@ -1245,6 +1490,7 @@ def spread_pdf(
     doc_type: str,
     period: str = "Latest",
     model_override: Optional[str] = None,
+    extended_thinking: bool = True,
     max_pages: Optional[int] = None,
     dpi: int = 200,
     max_retries: int = 1,
@@ -1270,6 +1516,7 @@ def spread_pdf(
         doc_type: Type of document ('income' or 'balance')
         period: Fiscal period to extract (or 'Latest' for auto-detect)
         model_override: Override model (testing only)
+        extended_thinking: Enable extended thinking for Anthropic models (default True)
         max_pages: Maximum pages to process
         dpi: Image resolution for PDF conversion
         max_retries: Maximum retry attempts on validation failure
@@ -1327,6 +1574,9 @@ def spread_pdf(
         model_kwargs = {}
         if any(x in model_override.lower() for x in ["gpt-5", "o1", "o3"]):
             model_kwargs["reasoning_effort"] = os.getenv("OPENAI_REASONING_EFFORT", "high")
+        # Add extended thinking for Anthropic models
+        if "claude" in model_override.lower() and extended_thinking:
+            model_kwargs["extended_thinking"] = True
         logger.info(f"[MODEL] Using override: {model_name}")
     elif hub_model_config and hub_model_config.get("model"):
         # Model from LangSmith Hub - use full configuration from the prompt
@@ -1351,11 +1601,18 @@ def spread_pdf(
                 logger.warning(f"[MODEL] gpt-5.2 only supports reasoning_effort='medium', overriding '{reasoning}'")
                 reasoning = "medium"
             model_kwargs["reasoning_effort"] = reasoning
+        
+        # Add extended thinking for Anthropic models
+        if "claude" in model_name.lower() and extended_thinking:
+            model_kwargs["extended_thinking"] = True
             
         logger.info(f"[MODEL] Using Hub config: {model_name} (kwargs: {model_kwargs})")
     else:
         # Environment variable or default
         model_name, model_kwargs = get_model_config_from_environment()
+        # Add extended thinking for Anthropic models
+        if "claude" in model_name.lower() and extended_thinking:
+            model_kwargs["extended_thinking"] = True
         logger.info(f"[MODEL] Using environment: {model_name}")
 
     # -------------------------------------------------------------------------
@@ -1445,10 +1702,19 @@ def spread_pdf(
             logger.info(f"[POST-PROCESS] Applied corrections: {corrections}")
 
     # Best-effort: populate metadata fields if prompt didn't set them
+    # Also standardize the period label
     try:
+        standardized_period = standardize_period_label(period)
+        if standardized_period != period:
+            logger.info(f"[POST-PROCESS] Standardized period: '{period}' -> '{standardized_period}'")
+            period = standardized_period
+        
         if isinstance(result, IncomeStatement):
             if not getattr(result, "fiscal_period", None):
                 result.fiscal_period = period
+            else:
+                # Standardize existing fiscal_period
+                result.fiscal_period = standardize_period_label(result.fiscal_period)
         elif isinstance(result, BalanceSheet):
             if not getattr(result, "as_of_date", None) and detected_period_info and detected_period_info.best_end_date:
                 result.as_of_date = detected_period_info.best_end_date
@@ -1471,10 +1737,12 @@ def spread_pdf_multi_period(
     pdf_path: str,
     doc_type: str,
     model_override: Optional[str] = None,
+    extended_thinking: bool = True,
     max_pages: Optional[int] = None,
     dpi: int = 200,
     max_retries: int = 1,
-    validation_tolerance: float = 0.05
+    validation_tolerance: float = 0.05,
+    _preconverted_images: Optional[List[tuple]] = None,
 ) -> Union[MultiPeriodIncomeStatement, MultiPeriodBalanceSheet]:
     """
     Process a PDF financial statement and extract ALL detected periods.
@@ -1497,10 +1765,12 @@ def spread_pdf_multi_period(
         pdf_path: Path to the PDF financial statement
         doc_type: Type of document ('income' or 'balance')
         model_override: Override model (testing only)
+        extended_thinking: Enable extended thinking for Anthropic models (default True)
         max_pages: Maximum pages to process
         dpi: Image resolution for PDF conversion
         max_retries: Maximum retry attempts on validation failure
         validation_tolerance: Tolerance for math validation (default 5%)
+        _preconverted_images: Internal use - pre-converted images to avoid duplicate conversion
         
     Returns:
         MultiPeriodIncomeStatement or MultiPeriodBalanceSheet with all periods
@@ -1515,22 +1785,27 @@ def spread_pdf_multi_period(
                 "max_pages": max_pages,
                 "dpi": dpi,
                 "mode": "multi-period",
-                "version": "5.0"
+                "version": "5.0",
+                "using_preconverted": _preconverted_images is not None
             })
     except Exception:
         pass
     
     # -------------------------------------------------------------------------
-    # STEP A: Convert PDF to Base64 Images (Vision-First)
+    # STEP A: Convert PDF to Base64 Images (Vision-First) or use pre-converted
     # -------------------------------------------------------------------------
     logger.info(f"[MULTI-PERIOD] Processing PDF: {pdf_path}")
     logger.info(f"Document type: {doc_type}")
     
-    base64_images = _convert_pdf_to_images(pdf_path, dpi, max_pages)
+    if _preconverted_images is not None:
+        base64_images = _preconverted_images
+        logger.info(f"[MULTI-PERIOD] Using {len(base64_images)} pre-converted images")
+    else:
+        base64_images = _convert_pdf_to_images(pdf_path, dpi, max_pages)
     
     estimated_tokens = estimate_token_count(base64_images)
     logger.info(
-        f"Converted {len(base64_images)} pages to images. "
+        f"Processing {len(base64_images)} pages. "
         f"Estimated tokens: ~{estimated_tokens:,}"
     )
     
@@ -1544,6 +1819,9 @@ def spread_pdf_multi_period(
         model_kwargs = {}
         if any(x in model_override.lower() for x in ["gpt-5", "o1", "o3"]):
             model_kwargs["reasoning_effort"] = os.getenv("OPENAI_REASONING_EFFORT", "high")
+        # Add extended thinking for Anthropic models
+        if "claude" in model_override.lower() and extended_thinking:
+            model_kwargs["extended_thinking"] = True
     else:
         prompt, hub_model_config = load_from_hub(doc_type)
         if hub_model_config and hub_model_config.get("model"):
@@ -1557,8 +1835,14 @@ def spread_pdf_multi_period(
                 if "gpt-5.2" in model_name.lower() and reasoning != "medium":
                     reasoning = "medium"
                 model_kwargs["reasoning_effort"] = reasoning
+            # Add extended thinking for Anthropic models
+            if "claude" in model_name.lower() and extended_thinking:
+                model_kwargs["extended_thinking"] = True
         else:
             model_name, model_kwargs = get_model_config_from_environment()
+            # Add extended thinking for Anthropic models
+            if "claude" in model_name.lower() and extended_thinking:
+                model_kwargs["extended_thinking"] = True
     
     # -------------------------------------------------------------------------
     # STEP C: Detect ALL Period Candidates
@@ -1630,6 +1914,14 @@ def spread_pdf_multi_period(
         extracted_periods = extraction_result.periods
         currency = extraction_result.currency
         scale = extraction_result.scale
+        
+        # Standardize period labels for consistency
+        for period_data in extracted_periods:
+            original_label = period_data.period_label
+            standardized_label = standardize_period_label(original_label)
+            if standardized_label != original_label:
+                logger.info(f"[MULTI-PERIOD] Standardized period label: '{original_label}' -> '{standardized_label}'")
+                period_data.period_label = standardized_label
         
         logger.info(f"[MULTI-PERIOD] Extracted {len(extracted_periods)} period(s) in single LLM call")
         
@@ -1703,13 +1995,317 @@ def spread_pdf_multi_period(
     return result
 
 
+# =============================================================================
+# COMBINED EXTRACTION (Auto-Detect + Parallel)
+# =============================================================================
+
+@traceable(
+    name="spread_pdf_combined",
+    tags=["pipeline", "financial-spreading", "pdf", "combined", "parallel"],
+    metadata={"version": "5.0", "operation": "spread_pdf_combined"}
+)
+async def spread_pdf_combined(
+    pdf_path: str,
+    model_override: Optional[str] = None,
+    extended_thinking: bool = True,
+    max_pages: Optional[int] = None,
+    dpi: int = 200,
+    max_retries: int = 1,
+    validation_tolerance: float = 0.05,
+) -> CombinedFinancialExtraction:
+    """
+    Auto-detect statement types in a PDF and extract all found statements in parallel.
+    
+    This function:
+    1. Converts PDF to images (once)
+    2. Detects which statement types are present (income statement, balance sheet, or both)
+    3. Extracts detected statements in parallel (if both present)
+    4. Returns combined results
+    
+    PERFORMANCE:
+    - When both IS and BS are present, parallel extraction reduces total time by ~50%
+    - Images are converted once and shared between extractions
+    
+    Args:
+        pdf_path: Path to the PDF financial statement
+        model_override: Override model (testing only)
+        extended_thinking: Enable extended thinking for Anthropic models (default True)
+        max_pages: Maximum pages to process
+        dpi: Image resolution for PDF conversion
+        max_retries: Maximum retry attempts on validation failure
+        validation_tolerance: Tolerance for math validation (default 5%)
+        
+    Returns:
+        CombinedFinancialExtraction with income statement and/or balance sheet data
+    """
+    start_time = datetime.now()
+    
+    # Add custom metadata to the current trace
+    try:
+        run_tree = get_current_run_tree()
+        if run_tree:
+            run_tree.add_metadata({
+                "pdf_path": pdf_path,
+                "max_pages": max_pages,
+                "dpi": dpi,
+                "mode": "combined-auto-detect",
+                "version": "5.0"
+            })
+    except Exception:
+        pass
+    
+    # -------------------------------------------------------------------------
+    # STEP 1: Convert PDF to Base64 Images (Done ONCE)
+    # -------------------------------------------------------------------------
+    logger.info(f"[COMBINED] Processing PDF: {pdf_path}")
+    
+    base64_images = _convert_pdf_to_images(pdf_path, dpi, max_pages)
+    
+    estimated_tokens = estimate_token_count(base64_images)
+    logger.info(
+        f"[COMBINED] Converted {len(base64_images)} pages to images. "
+        f"Estimated tokens: ~{estimated_tokens:,}"
+    )
+    
+    # -------------------------------------------------------------------------
+    # STEP 2: Determine Model Configuration
+    # -------------------------------------------------------------------------
+    if model_override:
+        model_name = model_override
+        model_kwargs = {}
+        if any(x in model_override.lower() for x in ["gpt-5", "o1", "o3"]):
+            model_kwargs["reasoning_effort"] = os.getenv("OPENAI_REASONING_EFFORT", "high")
+        if "claude" in model_override.lower() and extended_thinking:
+            model_kwargs["extended_thinking"] = True
+    else:
+        # Use income statement prompt for model config (both use same model)
+        prompt, hub_model_config = load_from_hub("income")
+        if hub_model_config and hub_model_config.get("model"):
+            model_name = hub_model_config["model"]
+            model_kwargs = {}
+            if hub_model_config.get("reasoning_effort"):
+                reasoning = hub_model_config["reasoning_effort"]
+                valid_efforts = ["low", "medium", "high"]
+                if reasoning not in valid_efforts:
+                    reasoning = "medium"
+                if "gpt-5.2" in model_name.lower() and reasoning != "medium":
+                    reasoning = "medium"
+                model_kwargs["reasoning_effort"] = reasoning
+            if "claude" in model_name.lower() and extended_thinking:
+                model_kwargs["extended_thinking"] = True
+        else:
+            model_name, model_kwargs = get_model_config_from_environment()
+            if "claude" in model_name.lower() and extended_thinking:
+                model_kwargs["extended_thinking"] = True
+    
+    logger.info(f"[COMBINED] Using model: {model_name}")
+    
+    # -------------------------------------------------------------------------
+    # STEP 3: Detect Statement Types
+    # -------------------------------------------------------------------------
+    logger.info("[COMBINED] Detecting statement types...")
+    
+    detection = _detect_statement_types(
+        base64_images=base64_images,
+        model_name=model_name,
+        model_kwargs=model_kwargs,
+    )
+    
+    logger.info(
+        f"[COMBINED] Detection result: "
+        f"Income Statement={detection.has_income_statement}, "
+        f"Balance Sheet={detection.has_balance_sheet}, "
+        f"Confidence={detection.confidence:.2f}"
+    )
+    
+    # Check if no statements detected
+    if not detection.has_income_statement and not detection.has_balance_sheet:
+        logger.warning("[COMBINED] No financial statements detected in document")
+        return CombinedFinancialExtraction(
+            income_statement=None,
+            balance_sheet=None,
+            detected_types=detection,
+            extraction_metadata={
+                "execution_time_seconds": (datetime.now() - start_time).total_seconds(),
+                "model": model_name,
+                "error": "No financial statements detected"
+            }
+        )
+    
+    # -------------------------------------------------------------------------
+    # STEP 4: Extract Statements (Parallel if both present)
+    # -------------------------------------------------------------------------
+    income_result: Optional[MultiPeriodIncomeStatement] = None
+    balance_result: Optional[MultiPeriodBalanceSheet] = None
+    extraction_errors: List[str] = []
+    
+    if detection.has_income_statement and detection.has_balance_sheet:
+        # PARALLEL EXTRACTION - run both in parallel using asyncio
+        logger.info("[COMBINED] Both statement types detected - running parallel extraction")
+        
+        async def extract_income():
+            try:
+                return spread_pdf_multi_period(
+                    pdf_path=pdf_path,
+                    doc_type="income",
+                    model_override=model_override,
+                    extended_thinking=extended_thinking,
+                    max_pages=max_pages,
+                    dpi=dpi,
+                    max_retries=max_retries,
+                    validation_tolerance=validation_tolerance,
+                    _preconverted_images=base64_images,
+                )
+            except Exception as e:
+                logger.error(f"[COMBINED] Income statement extraction failed: {e}")
+                extraction_errors.append(f"Income statement extraction failed: {str(e)}")
+                return None
+        
+        async def extract_balance():
+            try:
+                return spread_pdf_multi_period(
+                    pdf_path=pdf_path,
+                    doc_type="balance",
+                    model_override=model_override,
+                    extended_thinking=extended_thinking,
+                    max_pages=max_pages,
+                    dpi=dpi,
+                    max_retries=max_retries,
+                    validation_tolerance=validation_tolerance,
+                    _preconverted_images=base64_images,
+                )
+            except Exception as e:
+                logger.error(f"[COMBINED] Balance sheet extraction failed: {e}")
+                extraction_errors.append(f"Balance sheet extraction failed: {str(e)}")
+                return None
+        
+        # Run both extractions in parallel using asyncio.to_thread for sync functions
+        income_task = asyncio.to_thread(
+            spread_pdf_multi_period,
+            pdf_path,
+            "income",
+            model_override,
+            extended_thinking,
+            max_pages,
+            dpi,
+            max_retries,
+            validation_tolerance,
+            base64_images,
+        )
+        balance_task = asyncio.to_thread(
+            spread_pdf_multi_period,
+            pdf_path,
+            "balance",
+            model_override,
+            extended_thinking,
+            max_pages,
+            dpi,
+            max_retries,
+            validation_tolerance,
+            base64_images,
+        )
+        
+        # Gather results
+        results = await asyncio.gather(income_task, balance_task, return_exceptions=True)
+        
+        # Process results
+        if isinstance(results[0], Exception):
+            logger.error(f"[COMBINED] Income statement extraction failed: {results[0]}")
+            extraction_errors.append(f"Income statement: {str(results[0])}")
+        else:
+            income_result = results[0]
+            
+        if isinstance(results[1], Exception):
+            logger.error(f"[COMBINED] Balance sheet extraction failed: {results[1]}")
+            extraction_errors.append(f"Balance sheet: {str(results[1])}")
+        else:
+            balance_result = results[1]
+            
+    elif detection.has_income_statement:
+        # SINGLE EXTRACTION - Income Statement only
+        logger.info("[COMBINED] Only income statement detected - extracting...")
+        
+        try:
+            income_result = spread_pdf_multi_period(
+                pdf_path=pdf_path,
+                doc_type="income",
+                model_override=model_override,
+                extended_thinking=extended_thinking,
+                max_pages=max_pages,
+                dpi=dpi,
+                max_retries=max_retries,
+                validation_tolerance=validation_tolerance,
+                _preconverted_images=base64_images,
+            )
+        except Exception as e:
+            logger.error(f"[COMBINED] Income statement extraction failed: {e}")
+            extraction_errors.append(f"Income statement: {str(e)}")
+            
+    elif detection.has_balance_sheet:
+        # SINGLE EXTRACTION - Balance Sheet only
+        logger.info("[COMBINED] Only balance sheet detected - extracting...")
+        
+        try:
+            balance_result = spread_pdf_multi_period(
+                pdf_path=pdf_path,
+                doc_type="balance",
+                model_override=model_override,
+                extended_thinking=extended_thinking,
+                max_pages=max_pages,
+                dpi=dpi,
+                max_retries=max_retries,
+                validation_tolerance=validation_tolerance,
+                _preconverted_images=base64_images,
+            )
+        except Exception as e:
+            logger.error(f"[COMBINED] Balance sheet extraction failed: {e}")
+            extraction_errors.append(f"Balance sheet: {str(e)}")
+    
+    # -------------------------------------------------------------------------
+    # STEP 5: Build Combined Result
+    # -------------------------------------------------------------------------
+    execution_time = (datetime.now() - start_time).total_seconds()
+    
+    # Build metadata
+    metadata = {
+        "execution_time_seconds": execution_time,
+        "model": model_name,
+        "pages_processed": len(base64_images),
+        "estimated_tokens": estimated_tokens,
+        "parallel_extraction": detection.has_income_statement and detection.has_balance_sheet,
+    }
+    
+    if extraction_errors:
+        metadata["extraction_errors"] = extraction_errors
+    
+    if income_result:
+        metadata["income_statement_periods"] = len(income_result.periods)
+    if balance_result:
+        metadata["balance_sheet_periods"] = len(balance_result.periods)
+    
+    result = CombinedFinancialExtraction(
+        income_statement=income_result,
+        balance_sheet=balance_result,
+        detected_types=detection,
+        extraction_metadata=metadata,
+    )
+    
+    logger.info(
+        f"[COMBINED] Extraction complete in {execution_time:.2f}s. "
+        f"Income Statement: {'Yes' if income_result else 'No'}, "
+        f"Balance Sheet: {'Yes' if balance_result else 'No'}"
+    )
+    
+    return result
+
+
 def spread_financials(
     file_path: str,
     doc_type: str,
     period: str = "Latest",
     multi_period: bool = True,
     **kwargs
-) -> Union[IncomeStatement, BalanceSheet, MultiPeriodIncomeStatement, MultiPeriodBalanceSheet]:
+) -> Union[IncomeStatement, BalanceSheet, MultiPeriodIncomeStatement, MultiPeriodBalanceSheet, CombinedFinancialExtraction]:
     """
     Unified entry point for spreading financial statements.
     
@@ -1718,13 +2314,15 @@ def spread_financials(
     
     Args:
         file_path: Path to the financial statement file (PDF, Excel future)
-        doc_type: Type of document ('income' or 'balance')
+        doc_type: Type of document ('income', 'balance', or 'auto' for auto-detection)
         period: Fiscal period to extract (ignored if multi_period=True)
         multi_period: If True, extract all periods; if False, extract single period
         **kwargs: Additional arguments passed to the processor
         
     Returns:
-        IncomeStatement/BalanceSheet (single) or MultiPeriodIncomeStatement/MultiPeriodBalanceSheet (multi)
+        - For doc_type='auto': CombinedFinancialExtraction with both statement types
+        - For doc_type='income' or 'balance': IncomeStatement/BalanceSheet (single) 
+          or MultiPeriodIncomeStatement/MultiPeriodBalanceSheet (multi)
     """
     from pathlib import Path
     
@@ -1736,6 +2334,11 @@ def spread_financials(
     ext = path.suffix.lower()
     
     if ext == ".pdf":
+        # Handle auto-detection mode
+        if doc_type.lower().strip() == "auto":
+            # Run the async combined extraction synchronously
+            return asyncio.run(spread_pdf_combined(file_path, **kwargs))
+        
         if multi_period:
             return spread_pdf_multi_period(file_path, doc_type, **kwargs)
         else:
