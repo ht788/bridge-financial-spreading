@@ -47,8 +47,11 @@ from models import (
     get_schema_for_doc_type,
     MultiPeriodIncomeStatement,
     MultiPeriodBalanceSheet,
+    MultiPeriodIncomeExtraction,
+    MultiPeriodBalanceExtraction,
     IncomeStatementPeriod,
     BalanceSheetPeriod,
+    get_multi_period_extraction_schema,
 )
 from utils import (
     pdf_to_base64_images,
@@ -71,6 +74,11 @@ class PeriodCandidate(BaseModel):
     label: str = Field(
         description="Human-readable period label as shown (or faithfully normalized), e.g. "
                     "'Year Ended Dec 31, 2024', 'As of 2024-12-31', 'FY2024', 'Q3 2024'."
+    )
+    normalized_label: Optional[str] = Field(
+        default=None,
+        description="Simplified/normalized label for display (e.g., 'January through December 2024' → '2024', "
+                    "'January 2025' → 'Jan 2025'). Should be concise and suitable for column headers."
     )
     end_date: Optional[str] = Field(
         default=None,
@@ -154,14 +162,24 @@ def _detect_fiscal_period(
 
     detection_system = (
         "You are an expert at reading financial statement headers from images.\n"
-        "Goal: identify the reporting period columns shown (e.g., 'Year ended Dec 31, 2024', "
-        "'Three months ended Sep 30, 2024', 'As of 2024-12-31').\n\n"
+        "Goal: identify ALL reporting period columns shown in the statement.\n\n"
+        "CRITICAL: Financial statements often show MULTIPLE periods for comparison. Look for:\n"
+        "- Side-by-side columns (e.g., 'Jan-Dec 2024' | 'Jan 2025')\n"
+        "- Year-over-year comparisons (e.g., '2024' | '2023')\n"
+        "- Partial periods (e.g., 'January 2025' alongside full year '2024')\n"
+        "- Different date formats (e.g., 'Year Ended December 31, 2024', 'January through December 2024')\n\n"
         "Rules:\n"
-        "- Prefer the MOST RECENT period (usually the right-most column).\n"
-        "- If multiple periods are shown, include all as candidates and mark is_most_recent.\n"
-        "- Preserve the statement's meaning; do not invent dates.\n"
-        "- best_period should be a concise label suitable to pass into another extraction prompt.\n"
+        "- Include ALL period columns found - not just the most recent one.\n"
+        "- Mark is_most_recent=True for the most recent period.\n"
+        "- For normalized_label, simplify verbose labels:\n"
+        "  * 'January through December 2024' → '2024'\n"
+        "  * 'Year Ended December 31, 2024' → '2024'\n"
+        "  * 'January 2025' → 'Jan 2025'\n"
+        "  * 'For the month ended January 31, 2025' → 'Jan 2025'\n"
+        "  * 'Three months ended March 31, 2024' → 'Q1 2024'\n"
+        "- Preserve the original label in 'label' field for reference.\n"
         "- If you can infer an ISO end_date from visible text, set end_date / best_end_date.\n"
+        "- Period columns are usually arranged left-to-right with most recent on the right.\n"
     )
 
     def _invoke_detection(images_subset: List[tuple]) -> FiscalPeriodDetection:
@@ -203,6 +221,122 @@ def _detect_fiscal_period(
     if best:
         return best, first_pass
     return requested_period, first_pass
+
+
+# =============================================================================
+# COLUMN CLASSIFICATION (Distinguish Periods from Rollups)
+# =============================================================================
+
+class ColumnClassification(BaseModel):
+    """
+    Output of column classification step.
+    
+    This separates real reporting period columns from rollup/summary columns
+    (like "Total") to prevent extracting aggregated data as a period.
+    """
+    period_columns: List[str] = Field(
+        description="Column labels that represent real reporting periods (ordered most recent first)"
+    )
+    rollup_columns: List[str] = Field(
+        default_factory=list,
+        description="Column labels that are rollup/summary columns (e.g., 'Total', 'YTD', 'Combined')"
+    )
+    column_order: List[str] = Field(
+        default_factory=list,
+        description="All columns in left-to-right order as seen in document"
+    )
+    classification_notes: Optional[str] = Field(
+        default=None,
+        description="Notes about classification decisions made"
+    )
+
+
+@traceable(
+    name="classify_columns",
+    tags=["column-classification", "vision"],
+    metadata={"operation": "classify_columns"}
+)
+def _classify_columns(
+    *,
+    base64_images: List[tuple],
+    doc_type: str,
+    model_name: str,
+    model_kwargs: Optional[dict],
+    period_candidates: List[PeriodCandidate],
+) -> ColumnClassification:
+    """
+    Classify columns as PERIOD vs ROLLUP before extraction.
+    
+    This step prevents the model from extracting data from "Total" columns
+    that aggregate other period columns.
+    
+    Args:
+        base64_images: List of (base64_data, media_type) tuples
+        doc_type: 'income' or 'balance'
+        model_name: Model to use for classification
+        model_kwargs: Additional model parameters
+        period_candidates: Period candidates from detection step
+        
+    Returns:
+        ColumnClassification with period and rollup columns identified
+    """
+    classification_system = (
+        "You are a financial statement column classifier.\n\n"
+        "TASK: Identify which columns represent REAL REPORTING PERIODS vs ROLLUP/SUMMARY columns.\n\n"
+        "ROLLUP INDICATORS (classify as rollup_columns):\n"
+        "- Column header contains: 'Total', 'Sum', 'Combined', 'Grand Total', 'YTD', 'Cumulative', 'Overall'\n"
+        "- Column values are mathematically the sum of adjacent period columns\n"
+        "- Column represents an aggregate rather than a specific time period\n\n"
+        "PERIOD INDICATORS (classify as period_columns):\n"
+        "- Specific date labels: 'Jan 2025', 'FY2024', 'Year Ended Dec 31, 2024', 'Q3 2024'\n"
+        "- Time ranges: 'Jan - Dec 2024', 'January through December 2024'\n"
+        "- Fiscal periods: '2024', '2023', 'FY23'\n\n"
+        "OUTPUT RULES:\n"
+        "- period_columns: Only real period columns, ordered from MOST RECENT to oldest\n"
+        "- rollup_columns: Any Total/Sum/Combined/YTD columns (these will be excluded from extraction)\n"
+        "- column_order: All columns in left-to-right document order\n"
+        "- If unsure whether a column is a rollup, lean toward classifying as PERIOD (safer to extract)"
+    )
+    
+    # Build candidate info string
+    candidate_info = ""
+    if period_candidates:
+        labels = [c.label for c in period_candidates if c.label]
+        if labels:
+            candidate_info = f"\n\nPreviously detected column candidates: {labels}"
+    
+    text_prompt = (
+        f"Classify the columns in this {doc_type} statement image.\n"
+        f"{candidate_info}\n\n"
+        f"Look at the column headers and classify each as either:\n"
+        f"- A PERIOD column (real reporting period like 'Jan 2025', 'FY2024')\n"
+        f"- A ROLLUP column (summary/total like 'Total', 'YTD')\n\n"
+        f"Return period_columns ordered from most recent to oldest."
+    )
+    
+    llm = create_llm(model_name=model_name, model_kwargs=model_kwargs)
+    structured_llm = llm.with_structured_output(ColumnClassification)
+    
+    human_content = create_vision_message_content(text_prompt, base64_images[:1])
+    messages = [
+        SystemMessage(content=classification_system),
+        HumanMessage(content=human_content),
+    ]
+    
+    config = get_runnable_config(
+        run_name=f"classify_columns_{doc_type}",
+        tags=[f"doc_type:{doc_type}", "column-classification", "vision-input"],
+        metadata={"num_candidates": len(period_candidates) if period_candidates else 0}
+    )
+    
+    result = structured_llm.invoke(messages, config=config)
+    
+    logger.info(
+        f"[COLUMN CLASSIFIER] Period columns: {result.period_columns}, "
+        f"Rollup columns: {result.rollup_columns}"
+    )
+    
+    return result
 
 
 # =============================================================================
@@ -420,6 +554,177 @@ def validate_spread(
         return validate_balance_sheet(data, tolerance)
     else:
         raise TypeError(f"Unsupported data type: {type(data)}")
+
+
+@traceable(
+    name="validate_multi_period_consistency",
+    tags=["validation", "multi-period", "consistency"],
+    metadata={"operation": "consistency_validation"}
+)
+def validate_multi_period_consistency(
+    periods: List[Any],  # List[IncomeStatementPeriod] or List[BalanceSheetPeriod]
+    doc_type: str
+) -> Tuple[bool, List[str], List[dict]]:
+    """
+    Validate that field mappings are consistent across all periods.
+    
+    This checks that if a row label maps to a schema field in one period,
+    it maps to the same field in all other periods.
+    
+    Args:
+        periods: List of period data objects
+        doc_type: 'income' or 'balance'
+        
+    Returns:
+        Tuple of (is_consistent, error_messages, corrections_applied)
+    """
+    errors = []
+    corrections = []
+    
+    if len(periods) < 2:
+        return True, [], []
+    
+    # Build field presence map: field -> {periods with value, periods without}
+    field_presence: dict = {}
+    
+    for period in periods:
+        data = period.data
+        period_label = period.period_label
+        
+        for field_name in data.model_fields.keys():
+            # Skip metadata fields
+            if field_name in ['fiscal_period', 'as_of_date', 'currency', 'scale']:
+                continue
+            
+            field_value = getattr(data, field_name, None)
+            if field_value is None:
+                continue
+            
+            if field_name not in field_presence:
+                field_presence[field_name] = {'has_value': [], 'null': [], 'raw_fields': {}}
+            
+            if hasattr(field_value, 'value') and field_value.value is not None:
+                field_presence[field_name]['has_value'].append(period_label)
+                # Track raw fields used for consistency check
+                if hasattr(field_value, 'raw_fields_used') and field_value.raw_fields_used:
+                    field_presence[field_name]['raw_fields'][period_label] = field_value.raw_fields_used
+            else:
+                field_presence[field_name]['null'].append(period_label)
+    
+    # Check for inconsistent presence (might indicate mapping drift)
+    for field_name, presence in field_presence.items():
+        has_value = presence['has_value']
+        is_null = presence['null']
+        
+        if has_value and is_null:
+            # Field has values in some periods but not others - log warning
+            logger.warning(
+                f"[CONSISTENCY] Field '{field_name}' has values in {has_value} "
+                f"but is null in {is_null} - verify this is expected"
+            )
+    
+    # Check raw_fields_used consistency across periods
+    for field_name, presence in field_presence.items():
+        raw_fields = presence.get('raw_fields', {})
+        if len(raw_fields) >= 2:
+            # Get unique raw field patterns
+            patterns = set()
+            for period_label, fields in raw_fields.items():
+                # Normalize: take first field, lowercase, strip numbers
+                if fields:
+                    pattern = fields[0].lower().strip()
+                    # Remove amounts/numbers for comparison
+                    import re
+                    pattern = re.sub(r'[\d,.$()]+', '', pattern).strip()
+                    patterns.add(pattern)
+            
+            if len(patterns) > 1:
+                logger.warning(
+                    f"[CONSISTENCY] Field '{field_name}' may have inconsistent source mapping: {raw_fields}"
+                )
+    
+    return len(errors) == 0, errors, corrections
+
+
+@traceable(
+    name="apply_computed_totals",
+    tags=["validation", "auto-compute", "post-processing"],
+    metadata={"operation": "compute_totals"}
+)
+def apply_computed_totals(
+    data: IncomeStatement,
+    tolerance: float = 0.01
+) -> Tuple[IncomeStatement, List[str]]:
+    """
+    Compute missing totals and validate existing ones for Income Statements.
+    
+    Rules:
+    - If gross_profit is null but revenue and cogs exist → compute it
+    - If gross_profit exists, validate it equals revenue - cogs
+    - If operating_income is null but gross_profit and total_opex exist → compute it
+    
+    Args:
+        data: The IncomeStatement to process
+        tolerance: Tolerance for validation checks (default 1%)
+        
+    Returns:
+        Tuple of (updated_data, list_of_corrections_applied)
+    """
+    corrections = []
+    
+    revenue = _get_value_or_zero(data.revenue)
+    cogs = _get_value_or_zero(data.cogs)
+    gross_profit = _get_value_or_zero(data.gross_profit)
+    
+    # Compute gross profit if missing but computable
+    if revenue != 0 and cogs != 0:
+        computed_gp = revenue - cogs
+        
+        if gross_profit == 0 or data.gross_profit.value is None:
+            # Fill in missing gross profit
+            data.gross_profit.value = computed_gp
+            data.gross_profit.confidence = 0.7  # Computed, not extracted
+            data.gross_profit.raw_fields_used = [
+                f"COMPUTED: revenue ({revenue:,.2f}) - cogs ({cogs:,.2f}) = {computed_gp:,.2f}"
+            ]
+            corrections.append(f"Computed gross_profit = {computed_gp:,.2f}")
+            logger.info(f"[AUTO-COMPUTE] Set gross_profit = {computed_gp:,.2f}")
+            # Update for subsequent calculations
+            gross_profit = computed_gp
+        else:
+            # Validate existing gross profit
+            diff = abs(computed_gp - gross_profit)
+            if diff > abs(gross_profit) * tolerance and diff > 1:
+                logger.warning(
+                    f"[VALIDATION] gross_profit mismatch: extracted {gross_profit:,.2f}, "
+                    f"computed {computed_gp:,.2f} (diff={diff:,.2f})"
+                )
+    
+    # Compute operating income if missing but computable
+    total_opex = _get_value_or_zero(data.total_operating_expenses)
+    operating_income = _get_value_or_zero(data.operating_income)
+    
+    if gross_profit != 0 and total_opex != 0:
+        computed_oi = gross_profit - total_opex
+        
+        if operating_income == 0 or data.operating_income.value is None:
+            data.operating_income.value = computed_oi
+            data.operating_income.confidence = 0.7
+            data.operating_income.raw_fields_used = [
+                f"COMPUTED: gross_profit ({gross_profit:,.2f}) - total_opex ({total_opex:,.2f}) = {computed_oi:,.2f}"
+            ]
+            corrections.append(f"Computed operating_income = {computed_oi:,.2f}")
+            logger.info(f"[AUTO-COMPUTE] Set operating_income = {computed_oi:,.2f}")
+        else:
+            # Validate existing operating income
+            diff = abs(computed_oi - operating_income)
+            if diff > abs(operating_income) * tolerance and diff > 1:
+                logger.warning(
+                    f"[VALIDATION] operating_income mismatch: extracted {operating_income:,.2f}, "
+                    f"computed {computed_oi:,.2f} (diff={diff:,.2f})"
+                )
+    
+    return data, corrections
 
 
 # =============================================================================
@@ -716,6 +1021,202 @@ def _invoke_llm_for_spreading(
     return result
 
 
+def _get_enhanced_extraction_system_prompt(doc_type: str) -> str:
+    """
+    Return enhanced system prompt for extraction when Hub prompt unavailable.
+    
+    This prompt includes detailed instructions for:
+    - Consistent field mapping across periods
+    - Proper handling of subtotals vs schema totals
+    - Interest classification rules
+    """
+    return f"""You are a financial statement spreading expert extracting {doc_type} data.
+
+## EXTRACTION PROTOCOL (Follow Exactly)
+
+### STEP 1: ROW LABEL INVENTORY
+Before extracting values, list ALL row labels visible in the statement.
+For each row label, determine which schema field it maps to.
+This mapping MUST be applied IDENTICALLY across ALL periods.
+
+### STEP 2: ANCHOR ROW EXTRACTION (Extract These First)
+Extract these primary totals FIRST for each period - they anchor the extraction:
+1. revenue / Total Income / Net Sales / Total Revenue
+2. cogs / Cost of Goods Sold / Cost of Sales / Cost of Revenue
+3. gross_profit / Gross Profit (ALWAYS extract if shown - this is NOT an ignorable subtotal)
+4. total_operating_expenses / Total Operating Expenses / Total Expenses (ALWAYS extract if shown)
+5. operating_income / Operating Income / EBIT
+6. net_income / Net Income / Net Profit / Bottom Line
+
+### STEP 3: DETAIL ROW EXTRACTION
+Extract remaining line items using the field mapping from Step 1.
+
+## SUBTOTAL HANDLING RULES (Critical)
+
+EXTRACT these schema-mapped totals (they are NOT ignorable subtotals):
+- gross_profit
+- total_operating_expenses  
+- operating_income
+- net_income
+- total_current_assets (for balance sheets)
+- total_assets (for balance sheets)
+- total_liabilities (for balance sheets)
+
+IGNORE these intermediate subtotals (unless they ARE the only value for a schema field):
+- "Subtotal", "Subtotal Payroll", "Total Travel", "Total Marketing"
+- Any row that is clearly a sub-grouping within a larger category
+
+## INTEREST CLASSIFICATION RULES
+
+interest_expense includes:
+- Interest Expense
+- Finance Charges
+- Bank Charges
+- Interest on Loans
+- Interest Paid
+
+These are NON-OPERATING unless the statement explicitly groups them under "Operating Expenses".
+
+## SG&A CLASSIFICATION RULES
+
+sga (Selling, General & Administrative) includes:
+- G&A, Admin Expenses, General Expenses
+- Office Expenses, Rent, Utilities, Insurance
+- Salaries & Wages, Payroll (if in OpEx section)
+- Professional Fees, Legal, Accounting
+
+Do NOT include in SG&A:
+- Interest expense
+- Depreciation (map to depreciation_amortization)
+- Income taxes
+
+## CONSISTENCY ENFORCEMENT
+
+CRITICAL: If Row X maps to field Y for Period 1, Row X MUST map to field Y for ALL periods.
+No exceptions. Same row label = same schema field across all periods.
+
+## NULL POLICY
+
+- value: null means "not present in document for this period"
+- confidence: 0.0 for null values
+- raw_fields_used: ["NOT FOUND: field_name not present in document for this period"]
+
+Never guess values. Only extract what is explicitly shown."""
+
+
+@traceable(
+    name="invoke_llm_for_multi_period_spreading",
+    tags=["llm", "vision", "extraction", "multi-period"],
+    metadata={"operation": "llm_invoke_multi_period"}
+)
+def _invoke_llm_for_multi_period_spreading(
+    prompt: ChatPromptTemplate,
+    base64_images: List[tuple],
+    doc_type: str,
+    column_classification: ColumnClassification,
+    model_name: str,
+    model_kwargs: Optional[dict] = None,
+) -> Union[MultiPeriodIncomeExtraction, MultiPeriodBalanceExtraction]:
+    """
+    Invoke the LLM to extract ALL periods from a financial statement in a single call.
+    
+    Column classification is passed in to ensure the model only extracts from
+    real period columns, not rollup/total columns.
+    
+    Args:
+        prompt: The Hub ChatPromptTemplate (contains system message)
+        base64_images: List of (base64_data, media_type) tuples
+        doc_type: 'income' or 'balance'
+        column_classification: Pre-classified columns (periods vs rollups) - FROZEN
+        model_name: Model to use for extraction
+        model_kwargs: Additional model parameters
+        
+    Returns:
+        MultiPeriodIncomeExtraction or MultiPeriodBalanceExtraction with all periods
+    """
+    # Get the multi-period extraction schema
+    extraction_schema = get_multi_period_extraction_schema(doc_type)
+    
+    # Create LLM with structured output for multi-period extraction
+    llm = create_llm(model_name=model_name, model_kwargs=model_kwargs)
+    structured_llm = llm.with_structured_output(extraction_schema)
+    
+    # Extract system message from the Hub prompt
+    system_message = None
+    if hasattr(prompt, 'messages') and prompt.messages:
+        for msg in prompt.messages:
+            if hasattr(msg, 'prompt') and hasattr(msg.prompt, 'template'):
+                if 'SystemMessage' in str(type(msg)):
+                    system_message = SystemMessage(content=msg.prompt.template)
+                    break
+    
+    if not system_message:
+        logger.warning("[MULTI-PERIOD] Could not extract system message from Hub prompt, using enhanced fallback")
+        system_message = SystemMessage(content=_get_enhanced_extraction_system_prompt(doc_type))
+    
+    # Build column selection instructions - EXPLICIT inclusion/exclusion
+    period_cols = column_classification.period_columns
+    rollup_cols = column_classification.rollup_columns
+    
+    column_instruction = (
+        f"\n\n## COLUMN SELECTION (FROZEN - DO NOT CHANGE)\n"
+        f"EXTRACT DATA FROM THESE PERIOD COLUMNS ONLY:\n"
+        f"  {period_cols}\n\n"
+        f"DO NOT EXTRACT DATA FROM THESE ROLLUP/TOTAL COLUMNS:\n"
+        f"  {rollup_cols if rollup_cols else '(none detected)'}\n\n"
+        f"This column classification is FINAL. Do not re-classify or re-interpret columns."
+    )
+    
+    # Build the human message text with enhanced instructions
+    text_content = (
+        f"Analyze the visual layout of the attached financial statement images.\n"
+        f"Extract data for the specified PERIOD columns and map each to the JSON schema.\n"
+        f"{column_instruction}\n\n"
+        f"CRITICAL REQUIREMENTS:\n"
+        f"1. Build a ROW LABEL → SCHEMA FIELD mapping table FIRST.\n"
+        f"2. Apply the SAME mapping to ALL periods (consistency enforcement).\n"
+        f"3. Extract anchor totals first: revenue, cogs, gross_profit, total_operating_expenses, net_income.\n"
+        f"4. ALWAYS extract gross_profit and total_operating_expenses if shown in the document.\n"
+        f"   These are schema fields, NOT ignorable subtotals.\n"
+        f"5. For missing values: value=null, confidence=0.0, raw_fields_used=['NOT FOUND: ...'].\n"
+        f"6. Order periods from most recent (index 0) to oldest.\n"
+        f"7. Use the exact period labels from the document headers.\n"
+    )
+    
+    # Create multimodal human message with TEXT + IMAGES
+    human_content = create_vision_message_content(text_content, base64_images)
+    human_message = HumanMessage(content=human_content)
+    
+    # Build the full message list
+    messages = [system_message, human_message]
+    
+    num_periods = len(period_cols)
+    logger.info(
+        f"[MULTI-PERIOD] Extracting {num_periods} period(s) {period_cols}, "
+        f"excluding {len(rollup_cols)} rollup(s) {rollup_cols}"
+    )
+    
+    # Configure tracing with column classification metadata
+    config = get_runnable_config(
+        run_name=f"spread_{doc_type}_all_periods",
+        tags=[f"doc_type:{doc_type}", f"pages:{len(base64_images)}", "vision-input", "multi-period"],
+        metadata={
+            "period_columns": period_cols,
+            "rollup_columns": rollup_cols,
+            "num_periods": num_periods,
+            "schema": extraction_schema.__name__,
+            "num_images": len(base64_images)
+        }
+    )
+    
+    # Invoke the LLM - single call for all periods
+    result = structured_llm.invoke(messages, config=config)
+    
+    logger.info(f"[MULTI-PERIOD] Extracted {len(result.periods)} periods in single LLM call")
+    
+    return result
+
+
 @traceable(
     name="convert_pdf_to_images",
     tags=["preprocessing", "pdf", "vision"],
@@ -737,7 +1238,7 @@ def _convert_pdf_to_images(
 @traceable(
     name="spread_pdf",
     tags=["pipeline", "financial-spreading", "pdf", "vision-first"],
-    metadata={"version": "4.0", "operation": "spread_pdf"}
+    metadata={"version": "5.0", "operation": "spread_pdf"}
 )
 def spread_pdf(
     pdf_path: str,
@@ -929,13 +1430,19 @@ def spread_pdf(
                 )
     
     # -------------------------------------------------------------------------
-    # STEP F: Return Result
+    # STEP F: Post-Processing (Compute Missing Totals)
     # -------------------------------------------------------------------------
     if not isinstance(result, (IncomeStatement, BalanceSheet)):
         raise ValueError(
             f"Unexpected result type: {type(result)}. "
             f"Expected {schema_class.__name__}"
         )
+    
+    # Apply computed totals for income statements (fills in missing gross_profit, etc.)
+    if isinstance(result, IncomeStatement):
+        result, corrections = apply_computed_totals(result, tolerance=validation_tolerance)
+        if corrections:
+            logger.info(f"[POST-PROCESS] Applied corrections: {corrections}")
 
     # Best-effort: populate metadata fields if prompt didn't set them
     try:
@@ -958,7 +1465,7 @@ def spread_pdf(
 @traceable(
     name="spread_pdf_multi_period",
     tags=["pipeline", "financial-spreading", "pdf", "vision-first", "multi-period"],
-    metadata={"version": "4.0", "operation": "spread_pdf_multi_period"}
+    metadata={"version": "5.0", "operation": "spread_pdf_multi_period"}
 )
 def spread_pdf_multi_period(
     pdf_path: str,
@@ -972,15 +1479,19 @@ def spread_pdf_multi_period(
     """
     Process a PDF financial statement and extract ALL detected periods.
     
-    This function detects all period columns in the statement (e.g., FY2024, FY2023)
-    and extracts data for each period, returning a multi-period result for
-    side-by-side comparison.
+    v5.0 CHANGES:
+    - Column classifier step separates periods from rollups (prevents "Total" extraction)
+    - Column classification is FROZEN for retries
+    - Post-extraction validation computes missing totals (gross_profit, etc.)
+    - Cross-period consistency validation
     
     ARCHITECTURE:
     1. VISION-FIRST: PDF → Images → Vision API
     2. PERIOD DETECTION: Identify all period columns
-    3. MULTI-EXTRACTION: Extract data for each period
-    4. VALIDATION: Math checks on each period's data
+    3. COLUMN CLASSIFICATION: Separate periods from rollups (NEW)
+    4. MULTI-EXTRACTION: Extract data for each period (with frozen columns)
+    5. POST-PROCESSING: Compute missing totals, validate consistency (NEW)
+    6. VALIDATION: Math checks on each period's data
     
     Args:
         pdf_path: Path to the PDF financial statement
@@ -1003,7 +1514,8 @@ def spread_pdf_multi_period(
                 "doc_type": doc_type,
                 "max_pages": max_pages,
                 "dpi": dpi,
-                "mode": "multi-period"
+                "mode": "multi-period",
+                "version": "5.0"
             })
     except Exception:
         pass
@@ -1023,11 +1535,10 @@ def spread_pdf_multi_period(
     )
     
     # -------------------------------------------------------------------------
-    # STEP B: Detect ALL Periods (not just the best one)
+    # STEP B: Get Model Configuration
     # -------------------------------------------------------------------------
     schema_class = get_schema_for_doc_type(doc_type)
     
-    # Get model configuration
     if model_override:
         model_name = model_override
         model_kwargs = {}
@@ -1049,96 +1560,126 @@ def spread_pdf_multi_period(
         else:
             model_name, model_kwargs = get_model_config_from_environment()
     
-    # Run period detection to get ALL candidates
+    # -------------------------------------------------------------------------
+    # STEP C: Detect ALL Period Candidates
+    # -------------------------------------------------------------------------
     logger.info("[MULTI-PERIOD] Detecting all period columns...")
     _, period_info = _detect_fiscal_period(
         base64_images=base64_images,
         doc_type=doc_type,
         model_name=model_name,
         model_kwargs=model_kwargs,
-        requested_period="Latest",  # Always auto-detect for multi-period
+        requested_period="Latest",
     )
     
-    # Build list of periods to extract
-    periods_to_extract: List[Tuple[str, Optional[str]]] = []
-    
     if period_info and period_info.candidates:
-        # Sort by most recent first (is_most_recent=True comes first)
-        sorted_candidates = sorted(
-            period_info.candidates, 
-            key=lambda x: (not x.is_most_recent, -x.confidence)
-        )
-        for candidate in sorted_candidates:
-            if candidate.label and candidate.confidence >= 0.5:
-                periods_to_extract.append((candidate.label, candidate.end_date))
-        
-        logger.info(f"[MULTI-PERIOD] Found {len(periods_to_extract)} period(s): {[p[0] for p in periods_to_extract]}")
-    
-    # Fallback: if no periods detected, use "Latest"
-    if not periods_to_extract:
-        logger.warning("[MULTI-PERIOD] No periods detected, falling back to 'Latest'")
-        periods_to_extract = [("Latest", None)]
+        period_labels = [c.normalized_label or c.label for c in period_info.candidates if c.confidence >= 0.5]
+        logger.info(f"[MULTI-PERIOD] Detected {len(period_labels)} period candidate(s): {period_labels}")
+    else:
+        logger.warning("[MULTI-PERIOD] No period candidates from detection step")
     
     # -------------------------------------------------------------------------
-    # STEP C: Extract Data for Each Period
+    # STEP D: CLASSIFY COLUMNS (NEW - Separate Periods from Rollups)
+    # -------------------------------------------------------------------------
+    logger.info("[MULTI-PERIOD] Classifying columns (periods vs rollups)...")
+    
+    column_classification = _classify_columns(
+        base64_images=base64_images,
+        doc_type=doc_type,
+        model_name=model_name,
+        model_kwargs=model_kwargs,
+        period_candidates=period_info.candidates if period_info else [],
+    )
+    
+    # Log classification results for debugging
+    logger.info(f"[COLUMN CLASSIFIER] Period columns: {column_classification.period_columns}")
+    logger.info(f"[COLUMN CLASSIFIER] Rollup columns: {column_classification.rollup_columns}")
+    if column_classification.classification_notes:
+        logger.info(f"[COLUMN CLASSIFIER] Notes: {column_classification.classification_notes}")
+    
+    if not column_classification.period_columns:
+        raise ValueError(
+            "No period columns detected after classification. "
+            "Cannot proceed with extraction. Check document format."
+        )
+    
+    # FREEZE column classification - this will NOT change on retries
+    frozen_columns = column_classification
+    
+    # -------------------------------------------------------------------------
+    # STEP E: Extract ALL Periods (with FROZEN column classification)
     # -------------------------------------------------------------------------
     prompt, _ = load_from_hub(doc_type)
-    llm = create_llm(model_name=model_name, model_kwargs=model_kwargs)
-    structured_llm = llm.with_structured_output(schema_class)
     
-    extracted_periods = []
+    logger.info(
+        f"[MULTI-PERIOD] Extracting {len(frozen_columns.period_columns)} period(s) "
+        f"(excluding {len(frozen_columns.rollup_columns)} rollup column(s))..."
+    )
     
-    for period_label, end_date in periods_to_extract:
-        logger.info(f"[MULTI-PERIOD] Extracting data for period: {period_label}")
+    try:
+        # Single LLM call with frozen column classification
+        extraction_result = _invoke_llm_for_multi_period_spreading(
+            prompt=prompt,
+            base64_images=base64_images,
+            doc_type=doc_type,
+            column_classification=frozen_columns,
+            model_name=model_name,
+            model_kwargs=model_kwargs,
+        )
         
-        try:
-            # Extract for this specific period
-            result = _invoke_llm_for_spreading(
-                prompt=prompt,
-                structured_llm=structured_llm,
-                base64_images=base64_images,
-                doc_type=doc_type,
-                period=period_label,
-                schema_class=schema_class,
-                retry_context=None
-            )
-            
-            # Validate
-            validation = validate_spread(result, tolerance=validation_tolerance)
-            if not validation.is_valid:
-                logger.warning(f"[MULTI-PERIOD] Validation issues for {period_label}: {validation.errors}")
-            
-            # Wrap in period container
-            if doc_type in ["income", "income_statement"]:
-                period_data = IncomeStatementPeriod(
-                    period_label=period_label,
-                    end_date=end_date,
-                    data=result
-                )
-            else:
-                period_data = BalanceSheetPeriod(
-                    period_label=period_label,
-                    end_date=end_date,
-                    data=result
-                )
-            
-            extracted_periods.append(period_data)
-            logger.info(f"[MULTI-PERIOD] Successfully extracted {period_label}")
-            
-        except Exception as e:
-            logger.error(f"[MULTI-PERIOD] Failed to extract period {period_label}: {e}")
-            # Continue with other periods
+        extracted_periods = extraction_result.periods
+        currency = extraction_result.currency
+        scale = extraction_result.scale
+        
+        logger.info(f"[MULTI-PERIOD] Extracted {len(extracted_periods)} period(s) in single LLM call")
+        
+    except Exception as e:
+        logger.error(f"[MULTI-PERIOD] Failed to extract periods: {e}")
+        raise ValueError(f"Failed to extract periods from document: {e}")
     
-    # -------------------------------------------------------------------------
-    # STEP D: Build Multi-Period Result
-    # -------------------------------------------------------------------------
     if not extracted_periods:
-        raise ValueError("Failed to extract any periods from the document")
+        raise ValueError("LLM extraction returned no periods")
     
-    # Get currency/scale from first successful extraction
-    first_data = extracted_periods[0].data
-    currency = getattr(first_data, 'currency', 'USD')
-    scale = getattr(first_data, 'scale', 'units')
+    # -------------------------------------------------------------------------
+    # STEP F: POST-PROCESSING (NEW - Compute Totals, Validate Consistency)
+    # -------------------------------------------------------------------------
+    logger.info("[MULTI-PERIOD] Running post-extraction processing...")
+    
+    # F1: Apply computed totals to each period (fills in missing gross_profit, etc.)
+    if doc_type in ["income", "income_statement"]:
+        for period_data in extracted_periods:
+            original_gp = period_data.data.gross_profit.value
+            period_data.data, corrections = apply_computed_totals(
+                period_data.data, 
+                tolerance=validation_tolerance
+            )
+            if corrections:
+                logger.info(f"[POST-PROCESS] {period_data.period_label}: {corrections}")
+    
+    # F2: Validate cross-period consistency
+    is_consistent, consistency_errors, _ = validate_multi_period_consistency(
+        extracted_periods, doc_type
+    )
+    if not is_consistent:
+        logger.warning(f"[CONSISTENCY] Cross-period issues found: {consistency_errors}")
+    
+    # F3: Validate math for each period
+    for period_data in extracted_periods:
+        validation = validate_spread(period_data.data, tolerance=validation_tolerance)
+        if not validation.is_valid:
+            logger.warning(
+                f"[VALIDATION] {period_data.period_label}: {validation.errors}"
+            )
+    
+    # -------------------------------------------------------------------------
+    # STEP G: Build Multi-Period Result
+    # -------------------------------------------------------------------------
+    if not currency:
+        first_data = extracted_periods[0].data
+        currency = getattr(first_data, 'currency', 'USD')
+    if not scale:
+        first_data = extracted_periods[0].data
+        scale = getattr(first_data, 'scale', 'units')
     
     if doc_type in ["income", "income_statement"]:
         result = MultiPeriodIncomeStatement(
@@ -1153,7 +1694,11 @@ def spread_pdf_multi_period(
             scale=scale
         )
     
-    logger.info(f"[MULTI-PERIOD] Successfully extracted {len(extracted_periods)} period(s)")
+    # Log extraction summary
+    logger.info(
+        f"[MULTI-PERIOD] Successfully extracted {len(extracted_periods)} period(s): "
+        f"{[p.period_label for p in extracted_periods]}"
+    )
     
     return result
 

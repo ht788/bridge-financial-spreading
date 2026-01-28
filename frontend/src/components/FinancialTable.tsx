@@ -9,8 +9,9 @@ import {
   MultiPeriodBalanceSheet,
   isMultiPeriod,
 } from '../types';
-import { formatCurrency, fieldNameToLabel } from '../utils';
+import { formatCurrency, fieldNameToLabel, normalizePeriodLabel } from '../utils';
 import { ConfidenceBadge } from './ConfidenceBadge';
+import { TrendSparkline } from './TrendSparkline';
 import { Info, Calendar } from 'lucide-react';
 import clsx from 'clsx';
 
@@ -37,21 +38,26 @@ const Tooltip: React.FC<TooltipProps> = ({ lineItem, fieldName }) => {
         <Info className="w-3 h-3 text-gray-400" />
       </button>
       {show && (
-        <div className="absolute z-10 w-72 p-3 bg-gray-900 text-white text-xs rounded-lg shadow-lg right-0 top-8">
-          <div className="space-y-2">
+        <div className="absolute z-20 w-72 p-4 bg-white text-gray-900 text-xs rounded-lg shadow-xl border border-gray-200 right-0 top-8 animate-in fade-in zoom-in-95 duration-200">
+          <div className="space-y-3">
             <div>
-              <span className="font-semibold">Field:</span> {fieldNameToLabel(fieldName)}
+              <span className="font-semibold text-gray-500 uppercase tracking-wider text-[10px]">Field</span>
+              <div className="font-medium text-sm">{fieldNameToLabel(fieldName)}</div>
             </div>
             <div>
-              <span className="font-semibold">Confidence:</span> {Math.round(lineItem.confidence * 100)}%
+              <span className="font-semibold text-gray-500 uppercase tracking-wider text-[10px]">Confidence</span>
+              <div className="flex items-center gap-2 mt-0.5">
+                <ConfidenceBadge confidence={lineItem.confidence} />
+                <span className="font-medium">{Math.round(lineItem.confidence * 100)}%</span>
+              </div>
             </div>
             {lineItem.raw_fields_used.length > 0 && (
               <div>
-                <span className="font-semibold">Source Text:</span>
-                <ul className="mt-1 space-y-1">
+                <span className="font-semibold text-gray-500 uppercase tracking-wider text-[10px]">Source Text</span>
+                <ul className="mt-1 space-y-1.5">
                   {lineItem.raw_fields_used.map((text, idx) => (
-                    <li key={idx} className="pl-2 border-l-2 border-gray-600">
-                      {text}
+                    <li key={idx} className="pl-2 border-l-2 border-emerald-500 text-gray-600 italic">
+                      "{text}"
                     </li>
                   ))}
                 </ul>
@@ -59,7 +65,8 @@ const Tooltip: React.FC<TooltipProps> = ({ lineItem, fieldName }) => {
             )}
             {lineItem.source_section_hint && (
               <div>
-                <span className="font-semibold">Section:</span> {lineItem.source_section_hint}
+                <span className="font-semibold text-gray-500 uppercase tracking-wider text-[10px]">Section</span>
+                <div className="text-gray-600">{lineItem.source_section_hint}</div>
               </div>
             )}
           </div>
@@ -118,14 +125,17 @@ const MultiPeriodIncomeStatementTable: React.FC<MultiPeriodIncomeTableProps> = (
           </h3>
           <table className="w-full">
             <thead>
-              <tr className="border-b-2 border-gray-300">
-                <th className="py-2 px-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider w-1/4">
+              <tr className="border-b-2 border-gray-300 sticky top-0 bg-white z-10 shadow-sm">
+                <th className="py-3 px-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider w-1/4 bg-gray-50/80 backdrop-blur-sm">
                   Line Item
                 </th>
+                <th className="py-3 px-3 text-center text-xs font-semibold text-gray-600 uppercase tracking-wider w-24 bg-gray-50/80 backdrop-blur-sm">
+                  Trend
+                </th>
                 {periods.map((period, idx) => (
-                  <th key={idx} className="py-2 px-3 text-right text-xs font-semibold text-gray-600 uppercase tracking-wider">
+                  <th key={idx} className="py-3 px-3 text-right text-xs font-semibold text-gray-600 uppercase tracking-wider bg-gray-50/80 backdrop-blur-sm">
                     <div className="flex flex-col items-end gap-0.5">
-                      <span>{period.period_label}</span>
+                      <span>{normalizePeriodLabel(period.period_label)}</span>
                       {period.end_date && (
                         <span className="text-[10px] text-gray-400 font-normal flex items-center gap-1">
                           <Calendar className="w-3 h-3" />
@@ -151,7 +161,8 @@ const MultiPeriodIncomeStatementTable: React.FC<MultiPeriodIncomeTableProps> = (
                   <tr
                     key={fieldName}
                     className={clsx(
-                      'hover:bg-gray-50',
+                      'hover:bg-gray-50 transition-colors',
+                      'even:bg-gray-50/30',
                       fieldName.includes('total') || fieldName.includes('net_income')
                         ? 'font-semibold bg-gray-50/50'
                         : ''
@@ -159,6 +170,14 @@ const MultiPeriodIncomeStatementTable: React.FC<MultiPeriodIncomeTableProps> = (
                   >
                     <td className="py-2.5 px-3 text-sm text-gray-900">
                       {fieldNameToLabel(fieldName)}
+                    </td>
+                    <td className="py-2.5 px-3 text-center">
+                      <TrendSparkline 
+                        data={periods.map(p => {
+                          const item = p.data[fieldName as keyof IncomeStatement] as LineItem;
+                          return item && typeof item === 'object' && 'value' in item ? item.value : null;
+                        })} 
+                      />
                     </td>
                     {periods.map((period, periodIdx) => {
                       const lineItem = period.data[fieldName as keyof IncomeStatement] as LineItem;
@@ -281,14 +300,17 @@ const MultiPeriodBalanceSheetTable: React.FC<MultiPeriodBalanceTableProps> = ({ 
           </h3>
           <table className="w-full">
             <thead>
-              <tr className="border-b-2 border-gray-300">
-                <th className="py-2 px-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider w-1/4">
+              <tr className="border-b-2 border-gray-300 sticky top-0 bg-white z-10 shadow-sm">
+                <th className="py-3 px-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider w-1/4 bg-gray-50/80 backdrop-blur-sm">
                   Line Item
                 </th>
+                <th className="py-3 px-3 text-center text-xs font-semibold text-gray-600 uppercase tracking-wider w-24 bg-gray-50/80 backdrop-blur-sm">
+                  Trend
+                </th>
                 {periods.map((period, idx) => (
-                  <th key={idx} className="py-2 px-3 text-right text-xs font-semibold text-gray-600 uppercase tracking-wider">
+                  <th key={idx} className="py-3 px-3 text-right text-xs font-semibold text-gray-600 uppercase tracking-wider bg-gray-50/80 backdrop-blur-sm">
                     <div className="flex flex-col items-end gap-0.5">
-                      <span>{period.period_label}</span>
+                      <span>{normalizePeriodLabel(period.period_label)}</span>
                       {period.end_date && (
                         <span className="text-[10px] text-gray-400 font-normal flex items-center gap-1">
                           <Calendar className="w-3 h-3" />
@@ -320,6 +342,14 @@ const MultiPeriodBalanceSheetTable: React.FC<MultiPeriodBalanceTableProps> = ({ 
                   >
                     <td className="py-2.5 px-3 text-sm text-gray-900">
                       {fieldNameToLabel(fieldName)}
+                    </td>
+                    <td className="py-2.5 px-3 text-center">
+                      <TrendSparkline 
+                        data={periods.map(p => {
+                          const item = p.data[fieldName as keyof BalanceSheet] as LineItem;
+                          return item && typeof item === 'object' && 'value' in item ? item.value : null;
+                        })} 
+                      />
                     </td>
                     {periods.map((period, periodIdx) => {
                       const lineItem = period.data[fieldName as keyof BalanceSheet] as LineItem;
@@ -566,7 +596,7 @@ export const FinancialTable: React.FC<FinancialTableProps> = ({ data, docType })
     numPeriods = mpData.periods.length;
     currencyDisplay = mpData.currency || 'USD';
     scaleDisplay = mpData.scale || 'units';
-    periodDisplay = mpData.periods.map(p => p.period_label).join(', ');
+    periodDisplay = mpData.periods.map(p => normalizePeriodLabel(p.period_label)).join(', ');
   } else {
     const spData = data as FinancialStatement;
     periodDisplay = (spData as any).fiscal_period || (spData as any).as_of_date || '';

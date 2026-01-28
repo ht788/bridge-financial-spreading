@@ -411,6 +411,62 @@ class BalanceSheetPeriod(PeriodData):
     data: BalanceSheet
 
 
+# =============================================================================
+# MULTI-PERIOD EXTRACTION OUTPUT (for single LLM call)
+# =============================================================================
+
+class MultiPeriodIncomeExtraction(BaseModel):
+    """
+    Output schema for extracting ALL periods from an income statement in a single LLM call.
+    
+    This allows the model to extract data for all visible period columns at once,
+    which is more efficient and provides better context for accurate extraction.
+    """
+    periods: List[IncomeStatementPeriod] = Field(
+        description="List of income statement data for each period column found in the document. "
+                    "Extract data for ALL visible period columns (e.g., 'Jan 2025' AND 'Jan-Dec 2024'). "
+                    "Order from most recent (index 0) to oldest."
+    )
+    currency: Optional[str] = Field(
+        default="USD",
+        description="Currency for all periods (ISO 4217 code)"
+    )
+    scale: Optional[str] = Field(
+        default="units",
+        description="Scale of numbers: 'units', 'thousands', 'millions', 'billions'"
+    )
+    notes: Optional[str] = Field(
+        default=None,
+        description="Any notes about the extraction (e.g., assumptions made, ambiguous values)"
+    )
+
+
+class MultiPeriodBalanceExtraction(BaseModel):
+    """
+    Output schema for extracting ALL periods from a balance sheet in a single LLM call.
+    
+    This allows the model to extract data for all visible as-of date columns at once,
+    which is more efficient and provides better context for accurate extraction.
+    """
+    periods: List[BalanceSheetPeriod] = Field(
+        description="List of balance sheet data for each as-of date column found in the document. "
+                    "Extract data for ALL visible date columns. "
+                    "Order from most recent (index 0) to oldest."
+    )
+    currency: Optional[str] = Field(
+        default="USD",
+        description="Currency for all periods (ISO 4217 code)"
+    )
+    scale: Optional[str] = Field(
+        default="units",
+        description="Scale of numbers: 'units', 'thousands', 'millions', 'billions'"
+    )
+    notes: Optional[str] = Field(
+        default=None,
+        description="Any notes about the extraction (e.g., assumptions made, ambiguous values)"
+    )
+
+
 class MultiPeriodIncomeStatement(BaseModel):
     """
     Multi-period Income Statement for comparative analysis.
@@ -494,6 +550,14 @@ MULTI_PERIOD_SCHEMA_REGISTRY = {
     "balance_sheet": MultiPeriodBalanceSheet,
 }
 
+# Multi-period EXTRACTION schema registry (for single LLM call)
+MULTI_PERIOD_EXTRACTION_REGISTRY = {
+    "income": MultiPeriodIncomeExtraction,
+    "income_statement": MultiPeriodIncomeExtraction,
+    "balance": MultiPeriodBalanceExtraction,
+    "balance_sheet": MultiPeriodBalanceExtraction,
+}
+
 
 def get_schema_for_doc_type(doc_type: str) -> type[BaseModel]:
     """
@@ -539,3 +603,28 @@ def get_multi_period_schema_for_doc_type(doc_type: str) -> type[BaseModel]:
             f"Valid types are: {valid_types}"
         )
     return MULTI_PERIOD_SCHEMA_REGISTRY[normalized]
+
+
+def get_multi_period_extraction_schema(doc_type: str) -> type[BaseModel]:
+    """
+    Retrieve the multi-period EXTRACTION schema for a document type.
+    
+    This schema is used for single-LLM-call extraction of all periods.
+    
+    Args:
+        doc_type: The type of financial document ('income' or 'balance')
+        
+    Returns:
+        The corresponding extraction schema class
+        
+    Raises:
+        ValueError: If doc_type is not recognized
+    """
+    normalized = doc_type.lower().strip()
+    if normalized not in MULTI_PERIOD_EXTRACTION_REGISTRY:
+        valid_types = list(MULTI_PERIOD_EXTRACTION_REGISTRY.keys())
+        raise ValueError(
+            f"Unknown document type: '{doc_type}'. "
+            f"Valid types are: {valid_types}"
+        )
+    return MULTI_PERIOD_EXTRACTION_REGISTRY[normalized]
