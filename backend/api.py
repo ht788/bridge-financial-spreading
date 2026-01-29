@@ -840,6 +840,7 @@ async def get_test_file(filename: str):
     Serve example financial files for testing.
     
     Supports nested paths like 'Luminex/file.pdf' to match directory structure.
+    Files are served inline (not as attachments) to allow PDF preview in iframes.
     """
     file_path = EXAMPLE_FINANCIALS_DIR / filename
     
@@ -855,13 +856,11 @@ async def get_test_file(filename: str):
     else:
         media_type = "application/pdf"
     
-    # Extract just the filename without directory for the response
-    response_filename = Path(filename).name
-    
+    # Return file WITHOUT filename parameter to serve inline (not as download attachment)
+    # This allows PDFs to display in iframes instead of triggering a download
     return FileResponse(
         file_path,
-        media_type=media_type,
-        filename=response_filename
+        media_type=media_type
     )
 
 

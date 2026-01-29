@@ -45,10 +45,7 @@ export const SpreadingView: React.FC<SpreadingViewProps> = ({
   const combinedData = isCombined ? data as CombinedFinancialExtraction : null;
   
   // Helper to inject pdf_url into period data if not present
-  function injectPdfUrlIntoPeriods(periodData: MultiPeriodIncomeStatement | null): MultiPeriodIncomeStatement | null;
-  function injectPdfUrlIntoPeriods(periodData: MultiPeriodBalanceSheet | null): MultiPeriodBalanceSheet | null;
-  function injectPdfUrlIntoPeriods(periodData: MultiPeriodFinancialStatement | null): MultiPeriodFinancialStatement | null;
-  function injectPdfUrlIntoPeriods(periodData: MultiPeriodFinancialStatement | null): MultiPeriodFinancialStatement | null {
+  function injectPdfUrlIntoPeriods<T extends MultiPeriodFinancialStatement | null>(periodData: T): T {
     if (!periodData || !isMultiPeriod(periodData)) return periodData;
     
     // Only inject if periods don't already have pdf_url
@@ -62,7 +59,7 @@ export const SpreadingView: React.FC<SpreadingViewProps> = ({
         pdf_url: p.pdf_url || metadata.pdf_url,
         original_filename: p.original_filename || metadata.original_filename,
       })),
-    };
+    } as T;
   }
   
   // Get the data for the current view

@@ -80,6 +80,9 @@ export const testingApi = {
    * Get the URL for viewing a test file (PDF/Excel)
    */
   getTestFileUrl(filename: string): string {
-    return `${API_BASE_URL}/testing/files/${encodeURIComponent(filename)}`;
+    // Encode each path segment separately to preserve directory structure
+    // This ensures slashes aren't encoded, which FastAPI's path converter handles correctly
+    const encodedPath = filename.split('/').map(segment => encodeURIComponent(segment)).join('/');
+    return `${API_BASE_URL}/testing/files/${encodedPath}`;
   },
 };
