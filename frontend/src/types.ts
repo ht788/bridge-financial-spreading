@@ -137,8 +137,10 @@ export interface CombinedFinancialExtraction {
 /**
  * Type guard to check if data is multi-period format
  */
-export function isMultiPeriod(data: FinancialStatement | MultiPeriodFinancialStatement | CombinedFinancialExtraction): data is MultiPeriodFinancialStatement {
-  return 'periods' in data && Array.isArray(data.periods);
+export function isMultiPeriod(
+  data: FinancialStatement | MultiPeriodFinancialStatement | CombinedFinancialExtraction | null
+): data is MultiPeriodFinancialStatement {
+  return !!data && 'periods' in data && Array.isArray(data.periods);
 }
 
 /**

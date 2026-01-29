@@ -8,6 +8,7 @@ import {
   TestRunConfig,
   TestRunResult,
   TestHistoryResponse,
+  CompanyAnswerKey,
 } from './testingTypes';
 
 export const API_BASE_URL = import.meta.env.VITE_API_URL || '/api';
@@ -57,5 +58,28 @@ export const testingApi = {
   async getResult(testId: string): Promise<TestRunResult> {
     const response = await apiClient.get<TestRunResult>(`/result/${testId}`);
     return response.data;
+  },
+
+  /**
+   * Get the answer key for a specific company
+   */
+  async getAnswerKey(companyId: string): Promise<CompanyAnswerKey> {
+    const response = await apiClient.get<CompanyAnswerKey>(`/answer-key/${companyId}`);
+    return response.data;
+  },
+
+  /**
+   * Update the answer key for a company
+   */
+  async updateAnswerKey(answerKey: CompanyAnswerKey): Promise<{ success: boolean; message: string }> {
+    const response = await apiClient.put<{ success: boolean; message: string }>('/answer-key', answerKey);
+    return response.data;
+  },
+
+  /**
+   * Get the URL for viewing a test file (PDF/Excel)
+   */
+  getTestFileUrl(filename: string): string {
+    return `${API_BASE_URL}/testing/files/${encodeURIComponent(filename)}`;
   },
 };

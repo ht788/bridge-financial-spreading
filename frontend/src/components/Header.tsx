@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { FileSpreadsheet, Zap, FlaskConical, Bell, BellOff } from 'lucide-react';
+import { FileSpreadsheet, Zap, FlaskConical, Bell, BellOff, Edit3 } from 'lucide-react';
 import { 
   isNotificationSupported, 
   getNotificationPermission, 
@@ -9,12 +9,14 @@ import {
 interface HeaderProps {
   onNavigateToTesting?: () => void;
   onNavigateToHome?: () => void;
-  currentPage?: 'home' | 'testing';
+  onNavigateToAnswerKeys?: () => void;
+  currentPage?: 'home' | 'testing' | 'answer-keys';
 }
 
 export const Header: React.FC<HeaderProps> = ({ 
   onNavigateToTesting, 
   onNavigateToHome,
+  onNavigateToAnswerKeys,
   currentPage = 'home' 
 }) => {
   const [notificationPermission, setNotificationPermission] = useState(getNotificationPermission());
@@ -152,6 +154,18 @@ export const Header: React.FC<HeaderProps> = ({
             >
               <FlaskConical className="w-4 h-4" />
               Testing Lab
+            </button>
+
+            <button
+              onClick={onNavigateToAnswerKeys}
+              className={`flex items-center gap-2 px-4 py-2 rounded-xl font-medium transition-all ${
+                currentPage === 'answer-keys'
+                  ? 'bg-amber-100 text-amber-700 ring-2 ring-amber-500/20'
+                  : 'text-gray-600 hover:text-gray-900 hover:bg-gray-100'
+              }`}
+            >
+              <Edit3 className="w-4 h-4" />
+              Answer Keys
             </button>
           </div>
         </div>

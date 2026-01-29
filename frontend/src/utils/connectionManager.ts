@@ -76,12 +76,13 @@ class ConnectionManager {
   private wsReconnectTimer: ReturnType<typeof setTimeout> | null = null;
   private pingInterval: ReturnType<typeof setInterval> | null = null;
   private abortController: AbortController | null = null;
+  private healthCheckInFlight: Promise<boolean> | null = null;
   
   // Configuration
   private readonly healthCheckInterval = 30000; // 30s when connected
   private readonly disconnectedCheckInterval = 5000; // 5s when disconnected
   private readonly wsConnectTimeout = 10000; // 10s to establish WS connection
-  private readonly httpTimeout = 8000; // 8s for health checks
+  private readonly httpTimeout = 15000; // 15s for health checks
   
   // State
   private isStarted = false;
@@ -302,51 +303,67 @@ class ConnectionManager {
   }
   
   private async checkHttpHealth(): Promise<boolean> {
-    console.log('[ConnectionManager] Checking HTTP health...');
-    
-    this.abortController = new AbortController();
-    const startTime = Date.now();
-    
-    try {
-      const timeoutId = setTimeout(() => {
-        this.abortController?.abort();
-      }, this.httpTimeout);
-      
-      const response = await fetch('/api/health', {
-        method: 'GET',
-        signal: this.abortController.signal,
-      });
-      
-      clearTimeout(timeoutId);
-      
-      const latency = Date.now() - startTime;
-      
-      if (response.ok) {
-        console.log(`[ConnectionManager] HTTP healthy (${latency}ms)`);
-        this.updateStatus({
-          httpHealthy: true,
-          lastHealthCheck: new Date(),
-          latencyMs: latency,
-          error: null,
-        });
-        return true;
-      } else {
-        throw new Error(`HTTP ${response.status}`);
-      }
-    } catch (error: unknown) {
-      const errorMessage = this.getErrorMessage(error);
-      console.log(`[ConnectionManager] HTTP health check failed: ${errorMessage}`);
-      
-      this.updateStatus({
-        httpHealthy: false,
-        lastHealthCheck: new Date(),
-        latencyMs: null,
-        error: errorMessage,
-        state: 'disconnected',
-      });
-      
-      return false;
+    if (this.healthCheckInFlight) {
+      return this.healthCheckInFlight;
     }
+
+    console.log('[ConnectionManager] Checking HTTP health...');
+
+    const controller = new AbortController();
+    this.abortController = controller;
+    const startTime = Date.now();
+
+    this.healthCheckInFlight = (async () => {
+      let timeoutId: ReturnType<typeof setTimeout> | null = null;
+      try {
+        timeoutId = setTimeout(() => {
+          controller.abort();
+        }, this.httpTimeout);
+
+        const response = await fetch(`${this.getApiBaseUrl()}/health`, {
+          method: 'GET',
+          signal: controller.signal,
+        });
+
+        const latency = Date.now() - startTime;
+
+        if (response.ok) {
+          console.log(`[ConnectionManager] HTTP healthy (${latency}ms)`);
+          this.updateStatus({
+            httpHealthy: true,
+            lastHealthCheck: new Date(),
+            latencyMs: latency,
+            error: null,
+          });
+          return true;
+        }
+
+        throw new Error(`HTTP ${response.status}`);
+      } catch (error: unknown) {
+        const errorMessage = this.getErrorMessage(error);
+        console.log(`[ConnectionManager] HTTP health check failed: ${errorMessage}`);
+
+        this.updateStatus({
+          httpHealthy: false,
+          lastHealthCheck: new Date(),
+          latencyMs: null,
+          error: errorMessage,
+          state: 'disconnected',
+        });
+
+        return false;
+      } finally {
+        if (timeoutId) {
+          clearTimeout(timeoutId);
+        }
+        if (this.abortController === controller) {
+          this.abortController = null;
+        }
+        this.healthCheckInFlight = null;
+      }
+    })();
+
+    return this.healthCheckInFlight;
   }
   
   private connectWebSocket(): Promise<void> {
@@ -604,12 +621,25 @@ class ConnectionManager {
   }
   
   private getWebSocketUrl(): string {
-    // In development, use relative path to go through Vite proxy
-    if (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') {
-      return `${window.location.protocol === 'https:' ? 'wss:' : 'ws:'}//${window.location.host}/ws/progress`;
+    const apiBaseUrl = this.getApiBaseUrl();
+
+    // If API base URL is absolute, derive WS host from it
+    if (apiBaseUrl.startsWith('http://') || apiBaseUrl.startsWith('https://')) {
+      const url = new URL(apiBaseUrl);
+      const wsProtocol = url.protocol === 'https:' ? 'wss:' : 'ws:';
+      return `${wsProtocol}//${url.host}/ws/progress`;
     }
-    // In production, use same host
+
+    // Relative API base: use same host (Vite proxy or same-origin)
     return `${window.location.protocol === 'https:' ? 'wss:' : 'ws:'}//${window.location.host}/ws/progress`;
+  }
+
+  private getApiBaseUrl(): string {
+    const configured = import.meta.env.VITE_API_URL;
+    if (configured) {
+      return configured.replace(/\/$/, '');
+    }
+    return '/api';
   }
   
   private getErrorMessage(error: unknown): string {

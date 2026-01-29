@@ -647,9 +647,6 @@ const aggregateBatchResults = (results: BatchResultItem[], docType: 'income' | '
 
   validResults.forEach(r => {
     const data = r.result!.data;
-    if (!data) {
-      return;
-    }
     const metadata = r.result!.metadata;
     
     // Handle CombinedFinancialExtraction (auto-detect)
