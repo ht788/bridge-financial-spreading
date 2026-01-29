@@ -8,6 +8,8 @@
 
 export type GradeLevel = 'A+' | 'A' | 'B' | 'C' | 'D' | 'F';
 
+export type TestRunStatus = 'pending' | 'running' | 'complete' | 'error';
+
 export type FieldAccuracy = 
   | 'exact' 
   | 'tolerance' 
@@ -133,6 +135,7 @@ export interface TestRunResult {
   model_name: string;
   prompt_version?: string;
   prompt_content?: string;
+  status: TestRunStatus;
   overall_score: number;
   overall_grade: GradeLevel;
   file_results: FileGrade[];
@@ -156,6 +159,7 @@ export interface TestRunSummary {
   company_name: string;
   model_name: string;
   prompt_version?: string;
+  status: TestRunStatus;
   overall_score: number;
   overall_grade: GradeLevel;
   total_files: number;
@@ -263,4 +267,34 @@ export function formatDuration(seconds: number): string {
   const minutes = Math.floor(seconds / 60);
   const remainingSeconds = seconds % 60;
   return `${minutes}m ${remainingSeconds.toFixed(0)}s`;
+}
+
+export function getStatusColor(status: TestRunStatus): string {
+  switch (status) {
+    case 'pending':
+      return 'text-gray-600 bg-gray-50 border-gray-200';
+    case 'running':
+      return 'text-blue-600 bg-blue-50 border-blue-200';
+    case 'complete':
+      return 'text-green-600 bg-green-50 border-green-200';
+    case 'error':
+      return 'text-red-600 bg-red-50 border-red-200';
+    default:
+      return 'text-gray-600 bg-gray-50 border-gray-200';
+  }
+}
+
+export function getStatusLabel(status: TestRunStatus): string {
+  switch (status) {
+    case 'pending':
+      return 'Pending';
+    case 'running':
+      return 'Running';
+    case 'complete':
+      return 'Complete';
+    case 'error':
+      return 'Error';
+    default:
+      return status;
+  }
 }

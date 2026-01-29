@@ -1,10 +1,12 @@
 import React from 'react';
-import { Clock, Building2, Cpu, Eye, Trash2 } from 'lucide-react';
+import { Clock, Building2, Cpu, Eye, Trash2, Loader2 } from 'lucide-react';
 import { 
   TestRunSummary, 
   getGradeColor, 
   formatScore, 
-  formatDuration 
+  formatDuration,
+  getStatusColor,
+  getStatusLabel
 } from '../../testingTypes';
 
 interface TestHistoryTableProps {
@@ -69,6 +71,9 @@ export const TestHistoryTable: React.FC<TestHistoryTableProps> = ({
                 Model
               </th>
               <th className="px-4 py-3 text-center text-xs font-semibold text-gray-600 uppercase tracking-wider">
+                Status
+              </th>
+              <th className="px-4 py-3 text-center text-xs font-semibold text-gray-600 uppercase tracking-wider">
                 Grade
               </th>
               <th className="px-4 py-3 text-center text-xs font-semibold text-gray-600 uppercase tracking-wider">
@@ -111,29 +116,51 @@ export const TestHistoryTable: React.FC<TestHistoryTableProps> = ({
                   </div>
                 </td>
                 <td className="px-4 py-3 text-center">
-                  <span className={`inline-flex px-3 py-1 text-sm font-bold rounded-lg border ${getGradeColor(run.overall_grade)}`}>
-                    {run.overall_grade}
+                  <span className={`inline-flex items-center gap-1.5 px-3 py-1 text-xs font-semibold rounded-lg border ${getStatusColor(run.status)}`}>
+                    {run.status === 'running' && <Loader2 className="w-3 h-3 animate-spin" />}
+                    {getStatusLabel(run.status)}
                   </span>
                 </td>
                 <td className="px-4 py-3 text-center">
-                  <span className="text-sm font-semibold text-gray-900">
-                    {formatScore(run.overall_score)}
-                  </span>
+                  {run.status === 'running' ? (
+                    <span className="text-xs text-gray-400">In progress...</span>
+                  ) : (
+                    <span className={`inline-flex px-3 py-1 text-sm font-bold rounded-lg border ${getGradeColor(run.overall_grade)}`}>
+                      {run.overall_grade}
+                    </span>
+                  )}
+                </td>
+                <td className="px-4 py-3 text-center">
+                  {run.status === 'running' ? (
+                    <span className="text-xs text-gray-400">—</span>
+                  ) : (
+                    <span className="text-sm font-semibold text-gray-900">
+                      {formatScore(run.overall_score)}
+                    </span>
+                  )}
                 </td>
                 <td className="px-4 py-3 text-center">
                   <span className="text-sm text-gray-600">{run.total_files}</span>
                 </td>
                 <td className="px-4 py-3 text-center">
-                  <span className="text-sm text-gray-600">{formatDuration(run.execution_time_seconds)}</span>
+                  {run.status === 'running' ? (
+                    <span className="text-xs text-gray-400">Running...</span>
+                  ) : (
+                    <span className="text-sm text-gray-600">{formatDuration(run.execution_time_seconds)}</span>
+                  )}
                 </td>
                 <td className="px-4 py-3 text-center">
-                  <button
-                    onClick={() => onViewResult(run.id)}
-                    className="inline-flex items-center gap-1 px-3 py-1.5 text-sm font-medium text-violet-600 hover:text-violet-700 hover:bg-violet-50 rounded-lg transition-colors"
-                  >
-                    <Eye className="w-4 h-4" />
-                    View
-                  </button>
+                  {run.status === 'running' ? (
+                    <span className="text-xs text-gray-400 italic">In progress</span>
+                  ) : (
+                    <button
+                      onClick={() => onViewResult(run.id)}
+                      className="inline-flex items-center gap-1 px-3 py-1.5 text-sm font-medium text-violet-600 hover:text-violet-700 hover:bg-violet-50 rounded-lg transition-colors"
+                    >
+                      <Eye className="w-4 h-4" />
+                      View
+                    </button>
+                  )}
                 </td>
               </tr>
             ))}

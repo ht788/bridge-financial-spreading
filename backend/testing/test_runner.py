@@ -28,7 +28,7 @@ try:
         FileAnswerKey, PeriodAnswerKey, CompanyAnswerKey,
         FieldComparison, FieldAccuracy, PeriodGrade, FileGrade,
         GradeLevel, score_to_grade, TestRunSummary, TestHistoryResponse,
-        ExpectedLineItem, AvailableModel
+        ExpectedLineItem, AvailableModel, TestRunStatus
     )
 except ImportError:
     from backend.testing.test_models import (
@@ -36,7 +36,7 @@ except ImportError:
         FileAnswerKey, PeriodAnswerKey, CompanyAnswerKey,
         FieldComparison, FieldAccuracy, PeriodGrade, FileGrade,
         GradeLevel, score_to_grade, TestRunSummary, TestHistoryResponse,
-        ExpectedLineItem, AvailableModel
+        ExpectedLineItem, AvailableModel, TestRunStatus
     )
 
 # Import spreader functionality
@@ -282,7 +282,7 @@ def get_test_history(limit: int = 50, company_id: Optional[str] = None) -> TestH
     if company_id:
         cursor.execute('''
             SELECT id, timestamp, company_id, company_name, model_name,
-                   prompt_version, overall_score, overall_grade, total_files,
+                   prompt_version, status, overall_score, overall_grade, total_files,
                    execution_time_seconds
             FROM test_runs
             WHERE company_id = ?
@@ -292,7 +292,7 @@ def get_test_history(limit: int = 50, company_id: Optional[str] = None) -> TestH
     else:
         cursor.execute('''
             SELECT id, timestamp, company_id, company_name, model_name,
-                   prompt_version, overall_score, overall_grade, total_files,
+                   prompt_version, status, overall_score, overall_grade, total_files,
                    execution_time_seconds
             FROM test_runs
             ORDER BY timestamp DESC
@@ -318,10 +318,11 @@ def get_test_history(limit: int = 50, company_id: Optional[str] = None) -> TestH
             company_name=row[3],
             model_name=row[4],
             prompt_version=row[5],
-            overall_score=row[6],
-            overall_grade=GradeLevel(row[7]),
-            total_files=row[8],
-            execution_time_seconds=row[9]
+            status=TestRunStatus(row[6]) if row[6] else TestRunStatus.COMPLETE,
+            overall_score=row[7],
+            overall_grade=GradeLevel(row[8]),
+            total_files=row[9],
+            execution_time_seconds=row[10]
         )
         for row in rows
     ]
@@ -337,7 +338,12 @@ def get_test_result_by_id(test_id: str) -> Optional[TestRunResult]:
     cursor = conn.cursor()
     
     cursor.execute('''
-        SELECT * FROM test_runs WHERE id = ?
+        SELECT id, timestamp, company_id, company_name, model_name,
+               prompt_version, prompt_content, status, overall_score, overall_grade,
+               total_files, total_periods, total_fields_tested, fields_correct,
+               fields_partial, fields_wrong, fields_missing, execution_time_seconds,
+               error, results_json, metadata_json
+        FROM test_runs WHERE id = ?
     ''', (test_id,))
     
     row = cursor.fetchone()
@@ -347,9 +353,17 @@ def get_test_result_by_id(test_id: str) -> Optional[TestRunResult]:
         return None
     
     # Parse the stored JSON
-    file_results_data = json.loads(row[18])
+    file_results_data = json.loads(row[19]) if row[19] else []
     file_results = [FileGrade(**f) for f in file_results_data]
-    metadata = json.loads(row[19]) if row[19] else {}
+    
+    # Parse metadata, handling both NULL and empty string
+    metadata = {}
+    if row[20] and row[20].strip():
+        try:
+            metadata = json.loads(row[20])
+        except json.JSONDecodeError:
+            logger.warning(f"Failed to parse metadata JSON for test {test_id}, using empty dict")
+            metadata = {}
     
     return TestRunResult(
         id=row[0],
@@ -359,17 +373,18 @@ def get_test_result_by_id(test_id: str) -> Optional[TestRunResult]:
         model_name=row[4],
         prompt_version=row[5],
         prompt_content=row[6],
-        overall_score=row[7],
-        overall_grade=GradeLevel(row[8]),
-        total_files=row[9],
-        total_periods=row[10],
-        total_fields_tested=row[11],
-        fields_correct=row[12],
-        fields_partial=row[13],
-        fields_wrong=row[14],
-        fields_missing=row[15],
-        execution_time_seconds=row[16],
-        error=row[17],
+        status=TestRunStatus(row[7]) if row[7] else TestRunStatus.COMPLETE,
+        overall_score=row[8],
+        overall_grade=GradeLevel(row[9]),
+        total_files=row[10],
+        total_periods=row[11],
+        total_fields_tested=row[12],
+        fields_correct=row[13],
+        fields_partial=row[14],
+        fields_wrong=row[15],
+        fields_missing=row[16],
+        execution_time_seconds=row[17],
+        error=row[18],
         file_results=file_results,
         metadata=metadata
     )
@@ -1078,6 +1093,46 @@ async def run_test(config: TestRunConfig, progress_callback=None) -> TestRunResu
     logger.info(f"[TEST RUN {test_id}] Model: {config.model_name}")
     logger.info(f"[TEST RUN {test_id}] DPI: {config.dpi}, Max Pages: {config.max_pages}, Tolerance: {config.tolerance_percent}%")
     
+    # Create initial test record with RUNNING status
+    initial_result = TestRunResult(
+        id=test_id,
+        timestamp=datetime.now(timezone.utc),
+        company_id=config.company_id,
+        company_name=company.name,
+        model_name=config.model_name,
+        prompt_version=None,
+        prompt_content=config.prompt_override,
+        status=TestRunStatus.RUNNING,
+        overall_score=0.0,
+        overall_grade=GradeLevel.FAILING,
+        file_results=[],
+        total_files=len(company.files),
+        total_periods=0,
+        total_fields_tested=0,
+        fields_correct=0,
+        fields_partial=0,
+        fields_wrong=0,
+        fields_missing=0,
+        execution_time_seconds=0.0,
+        error=None,
+        metadata={
+            "dpi": config.dpi,
+            "max_pages": config.max_pages,
+            "tolerance_percent": config.tolerance_percent,
+            "parallel": config.parallel,
+            "max_concurrent": config.max_concurrent
+        }
+    )
+    
+    # Save initial state to database
+    logger.info(f"[TEST RUN {test_id}] Saving initial test state to database...")
+    try:
+        save_test_result(initial_result)
+        logger.info(f"[TEST RUN {test_id}] ✓ Initial state saved with RUNNING status")
+    except Exception as e:
+        logger.error(f"[TEST RUN {test_id}] ❌ Failed to save initial state: {e}")
+        logger.error(traceback.format_exc())
+    
     # Emit initial progress
     await emit_progress(
         "initializing",
@@ -1307,6 +1362,7 @@ async def run_test(config: TestRunConfig, progress_callback=None) -> TestRunResu
         model_name=config.model_name,
         prompt_version=None,  # TODO: Get from Hub
         prompt_content=config.prompt_override,
+        status=TestRunStatus.COMPLETE if not errors else TestRunStatus.ERROR,
         overall_score=overall_score,
         overall_grade=score_to_grade(overall_score),
         file_results=file_results,
@@ -1330,10 +1386,10 @@ async def run_test(config: TestRunConfig, progress_callback=None) -> TestRunResu
     )
     
     # Save to database
-    logger.info(f"[TEST RUN {test_id}] Saving result to database...")
+    logger.info(f"[TEST RUN {test_id}] Saving final result to database...")
     try:
         save_test_result(result)
-        logger.info(f"[TEST RUN {test_id}] ✓ Result saved to database")
+        logger.info(f"[TEST RUN {test_id}] ✓ Result saved to database with status {result.status.value}")
     except Exception as e:
         logger.error(f"[TEST RUN {test_id}] ❌ Failed to save to database: {e}")
         logger.error(traceback.format_exc())

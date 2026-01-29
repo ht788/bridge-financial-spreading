@@ -148,10 +148,18 @@ export function notifySpreadComplete(
   extractionRate: number,
   docType: string
 ): void {
+  console.log('[NOTIFICATIONS] Attempting to show spread complete notification:', {
+    filename,
+    extractionRate,
+    docType,
+    permission: Notification.permission,
+    supported: isNotificationSupported()
+  });
+  
   const emoji = extractionRate >= 0.9 ? '🎉' : extractionRate >= 0.7 ? '✅' : '⚠️';
   const percentage = (extractionRate * 100).toFixed(0);
   
-  showNotification(
+  const notification = showNotification(
     `${emoji} Spreading Complete`,
     {
       body: `${filename}\n${docType === 'auto' ? 'Auto-detected statements' : docType === 'income' ? 'Income Statement' : 'Balance Sheet'}\nExtraction: ${percentage}%`,
@@ -159,6 +167,12 @@ export function notifySpreadComplete(
       autoClose: 8000,
     }
   );
+  
+  if (notification) {
+    console.log('[NOTIFICATIONS] Spread complete notification shown successfully');
+  } else {
+    console.warn('[NOTIFICATIONS] Failed to show spread complete notification');
+  }
 }
 
 /**
@@ -169,13 +183,20 @@ export function notifyBatchComplete(
   successCount: number,
   executionTime: number
 ): void {
+  console.log('[NOTIFICATIONS] Attempting to show batch complete notification:', {
+    totalFiles,
+    successCount,
+    executionTime,
+    permission: Notification.permission
+  });
+  
   const minutes = Math.floor(executionTime / 60);
   const seconds = Math.round(executionTime % 60);
   const timeStr = minutes > 0 ? `${minutes}m ${seconds}s` : `${seconds}s`;
 
   const emoji = successCount === totalFiles ? '🎉' : successCount > 0 ? '✅' : '❌';
   
-  showNotification(
+  const notification = showNotification(
     `${emoji} Batch Processing Complete`,
     {
       body: `${successCount}/${totalFiles} files processed successfully\nTime: ${timeStr}`,
@@ -183,6 +204,12 @@ export function notifyBatchComplete(
       autoClose: 8000,
     }
   );
+  
+  if (notification) {
+    console.log('[NOTIFICATIONS] Batch complete notification shown successfully');
+  } else {
+    console.warn('[NOTIFICATIONS] Failed to show batch complete notification');
+  }
 }
 
 /**

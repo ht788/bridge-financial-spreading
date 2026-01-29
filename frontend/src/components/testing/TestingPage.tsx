@@ -11,7 +11,7 @@ import {
   TestRunResult,
   TestRunSummary,
 } from '../../testingTypes';
-import { connectionManager, ConnectionStatus } from '../../utils/connectionManager';
+import { connectionManager, ConnectionStatus, WebSocketMessage } from '../../utils/connectionManager';
 import { notifyTestComplete, notifyError } from '../../utils/notifications';
 
 interface TestingPageProps {
@@ -40,7 +40,8 @@ export const TestingPage: React.FC<TestingPageProps> = ({ onBack }) => {
   // Track if initial load has been attempted
   const initialLoadAttempted = useRef(false);
   const isMounted = useRef(true);
-  const wsRef = useRef<WebSocket | null>(null);
+  const messageUnsubscribeRef = useRef<(() => void) | null>(null);
+  const historyRefreshInterval = useRef<NodeJS.Timeout | null>(null);
 
   // Subscribe to connection status (connection manager is already started by App.tsx)
   useEffect(() => {
@@ -70,77 +71,48 @@ export const TestingPage: React.FC<TestingPageProps> = ({ onBack }) => {
     loadHistory();
   }, []);
 
-  // WebSocket connection for test progress updates
-  const connectWebSocket = useCallback(() => {
-    // Close existing connection if any
-    if (wsRef.current && wsRef.current.readyState !== WebSocket.CLOSED) {
-      wsRef.current.close();
+  // Subscribe to ConnectionManager for test progress updates
+  const subscribeToProgress = useCallback(() => {
+    // Unsubscribe from any existing subscription
+    if (messageUnsubscribeRef.current) {
+      messageUnsubscribeRef.current();
     }
 
-    // Determine WebSocket URL
-    const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-    const apiBase = import.meta.env.VITE_API_URL || '';
-    let wsUrl: string;
+    console.log('[TESTING PAGE] Subscribing to ConnectionManager for progress updates');
     
-    if (apiBase && apiBase.startsWith('http')) {
-      // External API URL - convert to WebSocket
-      wsUrl = apiBase.replace(/^https?/, wsProtocol.replace(':', '')) + '/ws/progress';
-    } else {
-      // Same origin
-      wsUrl = `${wsProtocol}//${window.location.host}/ws/progress`;
-    }
-
-    console.log('[TESTING PAGE] Connecting to WebSocket for progress updates:', wsUrl);
-    
-    const ws = new WebSocket(wsUrl);
-    wsRef.current = ws;
-
-    ws.onopen = () => {
-      console.log('[TESTING PAGE] WebSocket connected for progress updates');
-    };
-
-    ws.onmessage = (event) => {
-      try {
-        const data = JSON.parse(event.data);
-        console.log('[TESTING PAGE] WebSocket message received:', data.type, data);
-        
-        // Handle test_progress messages
-        if (data.type === 'test_progress' && data.payload) {
-          console.log('[TESTING PAGE] Progress update:', data.payload);
-          if (isMounted.current) {
-            setTestProgress(data.payload as TestProgress);
-          }
+    const unsubscribe = connectionManager.onMessage((message: WebSocketMessage) => {
+      console.log('[TESTING PAGE] WebSocket message received:', message.type, message);
+      
+      // Handle test_progress messages
+      if (message.type === 'test_progress' && message.payload) {
+        console.log('[TESTING PAGE] Progress update:', message.payload);
+        if (isMounted.current) {
+          setTestProgress(message.payload as TestProgress);
         }
-      } catch (e) {
-        console.warn('[TESTING PAGE] Failed to parse WebSocket message:', e);
       }
-    };
-
-    ws.onerror = (error) => {
-      console.error('[TESTING PAGE] WebSocket error:', error);
-    };
-
-    ws.onclose = () => {
-      console.log('[TESTING PAGE] WebSocket closed');
-    };
-
-    return ws;
+    });
+    
+    messageUnsubscribeRef.current = unsubscribe;
   }, []);
 
-  // Disconnect WebSocket when not running a test
-  const disconnectWebSocket = useCallback(() => {
-    if (wsRef.current) {
-      wsRef.current.close();
-      wsRef.current = null;
+  // Unsubscribe from progress updates when not running a test
+  const unsubscribeFromProgress = useCallback(() => {
+    if (messageUnsubscribeRef.current) {
+      console.log('[TESTING PAGE] Unsubscribing from progress updates');
+      messageUnsubscribeRef.current();
+      messageUnsubscribeRef.current = null;
     }
   }, []);
 
-  // Cleanup WebSocket on unmount
+  // Cleanup on unmount
   useEffect(() => {
     return () => {
-      disconnectWebSocket();
+      unsubscribeFromProgress();
+      if (historyRefreshInterval.current) {
+        clearInterval(historyRefreshInterval.current);
+      }
     };
-  }, [disconnectWebSocket]);
+  }, [unsubscribeFromProgress]);
 
   const loadStatus = async () => {
     console.log('[TESTING PAGE] Loading status...');
@@ -221,6 +193,29 @@ export const TestingPage: React.FC<TestingPageProps> = ({ onBack }) => {
         total: response.total_count
       });
       setHistory(response.runs);
+      
+      // Check if any tests are still running
+      const hasRunningTests = response.runs.some(run => run.status === 'running');
+      
+      // Set up auto-refresh if there are running tests
+      if (hasRunningTests) {
+        if (!historyRefreshInterval.current) {
+          console.log('[TESTING PAGE] Setting up auto-refresh for running tests (every 3s)');
+          historyRefreshInterval.current = setInterval(() => {
+            if (isMounted.current) {
+              console.log('[TESTING PAGE] Auto-refreshing history...');
+              loadHistory();
+            }
+          }, 3000); // Refresh every 3 seconds
+        }
+      } else {
+        // Clear interval if no tests are running
+        if (historyRefreshInterval.current) {
+          console.log('[TESTING PAGE] No running tests, clearing auto-refresh');
+          clearInterval(historyRefreshInterval.current);
+          historyRefreshInterval.current = null;
+        }
+      }
     } catch (err: any) {
       if (!isMounted.current) return;
       console.error('[TESTING PAGE] ❌ Failed to load history:', err.message);
@@ -252,8 +247,8 @@ export const TestingPage: React.FC<TestingPageProps> = ({ onBack }) => {
       setCurrentResult(null);
       setTestProgress(null);
 
-      // Connect WebSocket for progress updates
-      connectWebSocket();
+      // Subscribe to ConnectionManager for progress updates
+      subscribeToProgress();
 
       const config = {
         company_id: selectedCompany.id,
@@ -295,9 +290,9 @@ export const TestingPage: React.FC<TestingPageProps> = ({ onBack }) => {
         result.execution_time_seconds
       );
       
-      // Disconnect WebSocket after a short delay to show final progress
+      // Unsubscribe from progress after a short delay to show final progress
       setTimeout(() => {
-        disconnectWebSocket();
+        unsubscribeFromProgress();
         setTestProgress(null);
       }, 2000);
       
@@ -331,8 +326,8 @@ export const TestingPage: React.FC<TestingPageProps> = ({ onBack }) => {
       // Show error notification
       notifyError('Test Run Failed', errorMessage);
       
-      // Disconnect WebSocket on error
-      disconnectWebSocket();
+      // Unsubscribe from progress on error
+      unsubscribeFromProgress();
       setTestProgress(null);
     }
   };
