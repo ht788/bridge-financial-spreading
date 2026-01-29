@@ -198,6 +198,7 @@ def init_db():
             model_name TEXT NOT NULL,
             prompt_version TEXT,
             prompt_content TEXT,
+            status TEXT NOT NULL DEFAULT 'pending',
             overall_score REAL NOT NULL,
             overall_grade TEXT NOT NULL,
             total_files INTEGER NOT NULL,
@@ -214,6 +215,13 @@ def init_db():
         )
     ''')
     
+    # Check if status column exists, add it if missing (migration)
+    cursor.execute("PRAGMA table_info(test_runs)")
+    columns = [column[1] for column in cursor.fetchall()]
+    if 'status' not in columns:
+        logger.info("Migrating database: adding status column")
+        cursor.execute("ALTER TABLE test_runs ADD COLUMN status TEXT NOT NULL DEFAULT 'complete'")
+    
     conn.commit()
     conn.close()
     logger.info("Test history database initialized")
@@ -226,14 +234,15 @@ def save_test_result(result: TestRunResult):
     conn = sqlite3.connect(TEST_HISTORY_DB)
     cursor = conn.cursor()
     
+    # Use REPLACE to allow updating existing records
     cursor.execute('''
-        INSERT INTO test_runs (
+        INSERT OR REPLACE INTO test_runs (
             id, timestamp, company_id, company_name, model_name,
-            prompt_version, prompt_content, overall_score, overall_grade,
+            prompt_version, prompt_content, status, overall_score, overall_grade,
             total_files, total_periods, total_fields_tested,
             fields_correct, fields_partial, fields_wrong, fields_missing,
             execution_time_seconds, error, results_json, metadata_json
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     ''', (
         result.id,
         result.timestamp.isoformat().replace('+00:00', 'Z') if result.timestamp.tzinfo else result.timestamp.isoformat() + "Z",
@@ -242,6 +251,7 @@ def save_test_result(result: TestRunResult):
         result.model_name,
         result.prompt_version,
         result.prompt_content,
+        result.status.value,
         result.overall_score,
         result.overall_grade.value,
         result.total_files,
@@ -259,7 +269,7 @@ def save_test_result(result: TestRunResult):
     
     conn.commit()
     conn.close()
-    logger.info(f"Saved test result {result.id}")
+    logger.info(f"Saved test result {result.id} with status {result.status.value}")
 
 
 def get_test_history(limit: int = 50, company_id: Optional[str] = None) -> TestHistoryResponse:

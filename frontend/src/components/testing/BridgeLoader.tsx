@@ -1,5 +1,5 @@
-import React, { useEffect, useState, useRef, useCallback } from 'react';
-import { FileText, CheckCircle, AlertCircle, Loader2, Clock, Zap, TrendingUp } from 'lucide-react';
+import React, { useEffect, useState, useRef } from 'react';
+import { FileText, CheckCircle, AlertCircle, Loader2, Clock, Zap, TrendingUp, Target } from 'lucide-react';
 
 export interface TestProgress {
   phase: 'initializing' | 'loading' | 'extracting' | 'grading' | 'file_complete' | 'file_error' | 'complete';
@@ -23,13 +23,6 @@ interface BridgeLoaderProps {
   progress?: TestProgress | null;
 }
 
-interface GameState {
-  position: number; // 0-100
-  velocity: number;
-  score: number;
-  obstacles: { position: number; gap: number }[];
-}
-
 interface ProgressEvent {
   timestamp: number;
   filename: string;
@@ -40,17 +33,25 @@ interface ProgressEvent {
   score?: number;
 }
 
+interface Target {
+  x: number;
+  y: number;
+  size: number;
+  speed: number;
+  color: string;
+  points: number;
+}
+
 export const BridgeLoader: React.FC<BridgeLoaderProps> = ({ progress }) => {
   // Game state
-  const [gameState, setGameState] = useState<GameState>({
-    position: 50,
-    velocity: 0,
-    score: 0,
-    obstacles: [],
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+  const [gameScore, setGameScore] = useState(0);
+  const [isPlaying, setIsPlaying] = useState(false);
+  const gameStateRef = useRef({
+    targets: [] as Target[],
+    lastSpawn: 0,
+    animationFrame: 0,
   });
-  const [isGameActive, setIsGameActive] = useState(false);
-  const gameLoopRef = useRef<number>();
-  const keysPressed = useRef<Set<string>>(new Set());
 
   // Progress tracking
   const [progressEvents, setProgressEvents] = useState<ProgressEvent[]>([]);
@@ -81,96 +82,163 @@ export const BridgeLoader: React.FC<BridgeLoaderProps> = ({ progress }) => {
     }
   }, [progress]);
 
-  // Game logic
+  // Simple target shooting game
   useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if (['ArrowUp', 'ArrowDown', 'Space', ' '].includes(e.key)) {
-        e.preventDefault();
-        keysPressed.current.add(e.key);
-        setIsGameActive(true);
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+
+    // Set canvas size
+    canvas.width = 800;
+    canvas.height = 400;
+
+    const spawnTarget = () => {
+      const colors = ['#8b5cf6', '#06b6d4', '#10b981', '#f59e0b', '#ef4444'];
+      const target: Target = {
+        x: Math.random() * (canvas.width - 60) + 30,
+        y: -30,
+        size: 30 + Math.random() * 20,
+        speed: 1 + Math.random() * 2,
+        color: colors[Math.floor(Math.random() * colors.length)],
+        points: Math.floor(50 / (30 + Math.random() * 20)),
+      };
+      gameStateRef.current.targets.push(target);
+    };
+
+    const handleClick = (e: MouseEvent) => {
+      if (!isPlaying) {
+        setIsPlaying(true);
+        return;
       }
+
+      const rect = canvas.getBoundingClientRect();
+      const x = e.clientX - rect.left;
+      const y = e.clientY - rect.top;
+
+      // Check if clicked on any target
+      gameStateRef.current.targets = gameStateRef.current.targets.filter(target => {
+        const distance = Math.sqrt(
+          Math.pow(x - target.x, 2) + Math.pow(y - target.y, 2)
+        );
+
+        if (distance < target.size) {
+          setGameScore(prev => prev + target.points);
+          
+          // Visual feedback
+          ctx.save();
+          ctx.fillStyle = 'rgba(255, 255, 255, 0.5)';
+          ctx.beginPath();
+          ctx.arc(target.x, target.y, target.size * 1.5, 0, Math.PI * 2);
+          ctx.fill();
+          ctx.restore();
+          
+          return false; // Remove target
+        }
+        return true; // Keep target
+      });
     };
 
-    const handleKeyUp = (e: KeyboardEvent) => {
-      keysPressed.current.delete(e.key);
-    };
-
-    window.addEventListener('keydown', handleKeyDown);
-    window.addEventListener('keyup', handleKeyUp);
-
-    return () => {
-      window.removeEventListener('keydown', handleKeyDown);
-      window.removeEventListener('keyup', handleKeyUp);
-    };
-  }, []);
-
-  // Game loop
-  useEffect(() => {
-    if (!isGameActive) return;
+    canvas.addEventListener('click', handleClick);
 
     const gameLoop = () => {
-      setGameState(prev => {
-        let newVelocity = prev.velocity;
-        let newPosition = prev.position;
+      // Clear canvas
+      ctx.fillStyle = 'rgba(15, 23, 42, 1)';
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
 
-        // Handle input
-        if (keysPressed.current.has('ArrowUp') || keysPressed.current.has('Space') || keysPressed.current.has(' ')) {
-          newVelocity = Math.max(newVelocity - 0.8, -5);
-        } else {
-          newVelocity = Math.min(newVelocity + 0.4, 5);
+      // Draw grid background
+      ctx.strokeStyle = 'rgba(139, 92, 246, 0.1)';
+      ctx.lineWidth = 1;
+      for (let i = 0; i < canvas.width; i += 40) {
+        ctx.beginPath();
+        ctx.moveTo(i, 0);
+        ctx.lineTo(i, canvas.height);
+        ctx.stroke();
+      }
+      for (let i = 0; i < canvas.height; i += 40) {
+        ctx.beginPath();
+        ctx.moveTo(0, i);
+        ctx.lineTo(canvas.width, i);
+        ctx.stroke();
+      }
+
+      if (isPlaying) {
+        // Spawn targets
+        const now = Date.now();
+        if (now - gameStateRef.current.lastSpawn > 1000) {
+          spawnTarget();
+          gameStateRef.current.lastSpawn = now;
         }
 
-        // Update position
-        newPosition = Math.max(0, Math.min(100, newPosition + newVelocity));
+        // Update and draw targets
+        gameStateRef.current.targets = gameStateRef.current.targets.filter(target => {
+          target.y += target.speed;
 
-        // Generate new obstacles occasionally
-        let newObstacles = prev.obstacles.map(obs => ({
-          ...obs,
-          position: obs.position - 2,
-        })).filter(obs => obs.position > -10);
+          // Draw target
+          ctx.save();
+          
+          // Outer glow
+          const gradient = ctx.createRadialGradient(
+            target.x, target.y, 0,
+            target.x, target.y, target.size
+          );
+          gradient.addColorStop(0, target.color);
+          gradient.addColorStop(1, target.color + '00');
+          ctx.fillStyle = gradient;
+          ctx.beginPath();
+          ctx.arc(target.x, target.y, target.size * 1.3, 0, Math.PI * 2);
+          ctx.fill();
 
-        if (Math.random() < 0.02 && newObstacles.length < 3) {
-          newObstacles.push({
-            position: 110,
-            gap: 30 + Math.random() * 20,
-          });
-        }
+          // Target circle
+          ctx.fillStyle = target.color;
+          ctx.beginPath();
+          ctx.arc(target.x, target.y, target.size, 0, Math.PI * 2);
+          ctx.fill();
 
-        // Check collisions & update score
-        let newScore = prev.score;
-        newObstacles.forEach(obs => {
-          if (obs.position > 48 && obs.position < 52) {
-            const gapStart = 50 - obs.gap / 2;
-            const gapEnd = 50 + obs.gap / 2;
-            if (newPosition < gapStart || newPosition > gapEnd) {
-              // Hit obstacle - reset
-              newPosition = 50;
-              newVelocity = 0;
-            } else if (obs.position === 50) {
-              newScore += 10;
-            }
-          }
+          // Center dot
+          ctx.fillStyle = 'rgba(255, 255, 255, 0.8)';
+          ctx.beginPath();
+          ctx.arc(target.x, target.y, target.size * 0.3, 0, Math.PI * 2);
+          ctx.fill();
+
+          // Points text
+          ctx.fillStyle = 'white';
+          ctx.font = 'bold 14px sans-serif';
+          ctx.textAlign = 'center';
+          ctx.textBaseline = 'middle';
+          ctx.fillText('+' + target.points, target.x, target.y);
+
+          ctx.restore();
+
+          // Remove if off screen
+          return target.y < canvas.height + 50;
         });
+      } else {
+        // Draw start message
+        ctx.fillStyle = 'rgba(255, 255, 255, 0.9)';
+        ctx.font = 'bold 32px sans-serif';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText('🎯 Click to Start!', canvas.width / 2, canvas.height / 2 - 20);
+        
+        ctx.font = '16px sans-serif';
+        ctx.fillStyle = 'rgba(255, 255, 255, 0.7)';
+        ctx.fillText('Click falling targets to score points', canvas.width / 2, canvas.height / 2 + 20);
+      }
 
-        return {
-          position: newPosition,
-          velocity: newVelocity,
-          score: newScore,
-          obstacles: newObstacles,
-        };
-      });
-
-      gameLoopRef.current = requestAnimationFrame(gameLoop);
+      gameStateRef.current.animationFrame = requestAnimationFrame(gameLoop);
     };
 
-    gameLoopRef.current = requestAnimationFrame(gameLoop);
+    gameLoop();
 
     return () => {
-      if (gameLoopRef.current) {
-        cancelAnimationFrame(gameLoopRef.current);
+      canvas.removeEventListener('click', handleClick);
+      if (gameStateRef.current.animationFrame) {
+        cancelAnimationFrame(gameStateRef.current.animationFrame);
       }
     };
-  }, [isGameActive]);
+  }, [isPlaying]);
 
   const formatTime = (seconds?: number) => {
     if (!seconds) return '0s';
@@ -196,73 +264,27 @@ export const BridgeLoader: React.FC<BridgeLoaderProps> = ({ progress }) => {
         {/* Left Side - Interactive Game */}
         <div className="flex-1 flex flex-col items-center justify-center p-8 relative">
           {/* Game Title */}
-          <div className="absolute top-8 left-8 right-8 flex items-center justify-between">
+          <div className="absolute top-8 left-8 right-8 flex items-center justify-between z-10">
             <div>
               <h2 className="text-2xl font-bold text-white mb-1">
-                Bridge Flight Challenge
+                Target Shooter
               </h2>
               <p className="text-sm text-gray-400">
-                Press <kbd className="px-2 py-1 bg-white/10 rounded text-xs">SPACE</kbd> or <kbd className="px-2 py-1 bg-white/10 rounded text-xs">↑</kbd> to fly up!
+                Click the falling targets to score points!
               </p>
             </div>
             <div className="text-right">
-              <div className="text-3xl font-bold text-violet-400">{gameState.score}</div>
+              <div className="text-3xl font-bold text-violet-400">{gameScore}</div>
               <div className="text-xs text-gray-400">Score</div>
             </div>
           </div>
 
           {/* Game Canvas */}
-          <div className="relative w-full max-w-4xl h-96 bg-gradient-to-b from-sky-900 to-sky-700 rounded-2xl overflow-hidden shadow-2xl border-4 border-white/10">
-            {/* Background elements */}
-            <div className="absolute inset-0 opacity-20" 
-                 style={{ 
-                   backgroundImage: 'linear-gradient(#4f46e5 1px, transparent 1px), linear-gradient(90deg, #4f46e5 1px, transparent 1px)', 
-                   backgroundSize: '40px 40px',
-                   animation: 'grid-move 20s linear infinite'
-                 }} 
-            />
-
-            {/* Player (flying bridge element) */}
-            <div 
-              className="absolute left-1/4 w-12 h-8 transition-all duration-100"
-              style={{ 
-                top: `${gameState.position}%`,
-                transform: 'translateY(-50%)',
-              }}
-            >
-              <div className="relative">
-                <div className="absolute inset-0 bg-gradient-to-r from-violet-500 to-purple-600 rounded-lg shadow-lg shadow-violet-500/50 animate-pulse" />
-                <div className="absolute -right-2 top-1/2 -translate-y-1/2 w-0 h-0 border-t-4 border-t-transparent border-b-4 border-b-transparent border-l-8 border-l-purple-600" />
-              </div>
-            </div>
-
-            {/* Obstacles */}
-            {gameState.obstacles.map((obs, idx) => (
-              <div key={idx} className="absolute" style={{ left: `${obs.position}%` }}>
-                {/* Top obstacle */}
-                <div 
-                  className="absolute top-0 w-12 bg-gradient-to-b from-emerald-600 to-emerald-700 rounded-b-lg border-2 border-emerald-500/50"
-                  style={{ height: `${50 - obs.gap / 2}%` }}
-                />
-                {/* Bottom obstacle */}
-                <div 
-                  className="absolute bottom-0 w-12 bg-gradient-to-t from-emerald-600 to-emerald-700 rounded-t-lg border-2 border-emerald-500/50"
-                  style={{ height: `${50 - obs.gap / 2}%` }}
-                />
-              </div>
-            ))}
-
-            {/* Start prompt */}
-            {!isGameActive && (
-              <div className="absolute inset-0 flex items-center justify-center bg-black/50 backdrop-blur-sm">
-                <div className="text-center">
-                  <div className="text-6xl mb-4 animate-bounce">🎮</div>
-                  <p className="text-white text-xl font-semibold mb-2">Press SPACE or ↑ to Start</p>
-                  <p className="text-gray-300 text-sm">Fly through the gaps while tests run!</p>
-                </div>
-              </div>
-            )}
-          </div>
+          <canvas
+            ref={canvasRef}
+            className="rounded-2xl shadow-2xl border-4 border-white/10 cursor-crosshair"
+            style={{ imageRendering: 'crisp-edges' }}
+          />
 
           {/* Progress Summary Bar */}
           {progress && progress.total_files ? (
@@ -425,10 +447,6 @@ export const BridgeLoader: React.FC<BridgeLoaderProps> = ({ progress }) => {
       </div>
 
       <style>{`
-        @keyframes grid-move {
-          0% { background-position: 0 0; }
-          100% { background-position: 40px 40px; }
-        }
         @keyframes slide-in-right {
           from {
             opacity: 0;

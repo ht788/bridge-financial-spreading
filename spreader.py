@@ -2956,21 +2956,12 @@ Extract the {doc_type} statement data following the schema. For interim monthly 
             logger.info(f"[EXCEL] Standardized period label: '{original_label}' -> '{standardized_label}'")
             period_data.period_label = standardized_label
     
-    # Apply computed totals for income statements
+    # Apply computed totals for income statements (parallel for 3+ periods)
     if doc_type in ["income", "income_statement"]:
-        for period_data in result.periods:
-            period_data.data, corrections = apply_computed_totals(
-                period_data.data, 
-                tolerance=validation_tolerance
-            )
-            if corrections:
-                logger.info(f"[EXCEL] {period_data.period_label}: {corrections}")
+        apply_computed_totals_parallel(result.periods, tolerance=validation_tolerance)
     
-    # Validate math for each period
-    for period_data in result.periods:
-        validation = validate_spread(period_data.data, tolerance=validation_tolerance)
-        if not validation.is_valid:
-            logger.warning(f"[EXCEL] Validation {period_data.period_label}: {validation.errors}")
+    # Validate math for each period (parallel for 3+ periods)
+    validate_periods_parallel(result.periods, tolerance=validation_tolerance)
     
     # Build the final multi-period result
     currency = result.currency or 'USD'

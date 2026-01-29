@@ -54,7 +54,7 @@ export const Header: React.FC<HeaderProps> = ({
         // Show a test notification
         new Notification('✅ Notifications Enabled', {
           body: 'You\'ll receive notifications when processing completes.',
-          icon: '/icon-192.png',
+          icon: '/bridge-icon.png',
         });
       }
     } catch (error) {
