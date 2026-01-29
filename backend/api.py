@@ -1128,6 +1128,8 @@ async def run_test_endpoint(config: dict):
     
     This endpoint runs the spreader against all test files for the company,
     compares results to the answer key, and returns detailed grading.
+    
+    Progress updates are broadcast via WebSocket in real-time.
     """
     if not TESTING_ENABLED:
         await emit_log("error", "Testing module not available", "testing")
@@ -1149,7 +1151,17 @@ async def run_test_endpoint(config: dict):
         
         await emit_log("info", "[TEST RUN] Calling run_test function...", "testing")
         
-        result = await run_test(test_config)
+        # Progress callback to broadcast updates via WebSocket
+        async def progress_callback(test_id: str, progress_data: dict):
+            """Broadcast test progress to all connected WebSocket clients"""
+            await broadcast_message({
+                "type": "test_progress",
+                "job_id": test_id,
+                "timestamp": datetime.utcnow().isoformat() + "Z",
+                "payload": progress_data
+            })
+        
+        result = await run_test(test_config, progress_callback=progress_callback)
         
         await emit_log("info", 
             f"[TEST RUN COMPLETE] Score: {result.overall_score:.1f}% ({result.overall_grade.value}), Files: {result.total_files}, Periods: {result.total_periods}, Time: {result.execution_time_seconds:.2f}s",

@@ -34,9 +34,12 @@ export const testingApi = {
 
   /**
    * Run a test with the given configuration
+   * Note: Tests can take several minutes, so we use a long timeout
    */
   async runTest(config: TestRunConfig): Promise<TestRunResult> {
-    const response = await apiClient.post<TestRunResult>('/run', config);
+    const response = await apiClient.post<TestRunResult>('/run', config, {
+      timeout: 600000, // 10 minutes - tests can take a while
+    });
     return response.data;
   },
 

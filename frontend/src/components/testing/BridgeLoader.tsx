@@ -1,9 +1,31 @@
 import React, { useEffect, useState } from 'react';
+import { FileText, CheckCircle, AlertCircle, Loader2 } from 'lucide-react';
 
-export const BridgeLoader: React.FC = () => {
+export interface TestProgress {
+  phase: 'initializing' | 'loading' | 'extracting' | 'grading' | 'file_complete' | 'file_error' | 'complete';
+  message: string;
+  elapsed_seconds?: number;
+  total_files?: number;
+  current_file?: number;
+  current_filename?: string;
+  files_completed?: number;
+  doc_type?: string;
+  file_score?: number;
+  file_grade?: string;
+  overall_score?: number;
+  overall_grade?: string;
+  sub_phase?: string;
+  error?: string;
+}
+
+interface BridgeLoaderProps {
+  progress?: TestProgress | null;
+}
+
+export const BridgeLoader: React.FC<BridgeLoaderProps> = ({ progress }) => {
   const [messageIndex, setMessageIndex] = useState(0);
 
-  const messages = [
+  const defaultMessages = [
     "Analyzing financial documents...",
     "Constructing data models...",
     "Bridging the gap between PDF and Excel...",
@@ -14,11 +36,52 @@ export const BridgeLoader: React.FC = () => {
   ];
 
   useEffect(() => {
-    const interval = setInterval(() => {
-      setMessageIndex((prev) => (prev + 1) % messages.length);
-    }, 2500);
-    return () => clearInterval(interval);
-  }, []);
+    // Only cycle through default messages if no progress data
+    if (!progress) {
+      const interval = setInterval(() => {
+        setMessageIndex((prev) => (prev + 1) % defaultMessages.length);
+      }, 2500);
+      return () => clearInterval(interval);
+    }
+  }, [progress]);
+
+  // Calculate progress percentage
+  const progressPercent = progress && progress.total_files && progress.files_completed !== undefined
+    ? Math.round((progress.files_completed / progress.total_files) * 100)
+    : 0;
+
+  // Get phase-specific icon and color
+  const getPhaseInfo = (phase?: string) => {
+    switch (phase) {
+      case 'initializing':
+      case 'loading':
+        return { icon: Loader2, color: 'text-blue-500', bg: 'bg-blue-500/10' };
+      case 'extracting':
+        return { icon: FileText, color: 'text-violet-500', bg: 'bg-violet-500/10' };
+      case 'grading':
+        return { icon: Loader2, color: 'text-amber-500', bg: 'bg-amber-500/10' };
+      case 'file_complete':
+        return { icon: CheckCircle, color: 'text-green-500', bg: 'bg-green-500/10' };
+      case 'file_error':
+        return { icon: AlertCircle, color: 'text-red-500', bg: 'bg-red-500/10' };
+      case 'complete':
+        return { icon: CheckCircle, color: 'text-green-500', bg: 'bg-green-500/10' };
+      default:
+        return { icon: Loader2, color: 'text-violet-500', bg: 'bg-violet-500/10' };
+    }
+  };
+
+  const phaseInfo = getPhaseInfo(progress?.phase);
+  const PhaseIcon = phaseInfo.icon;
+
+  // Format elapsed time
+  const formatTime = (seconds?: number) => {
+    if (!seconds) return '0s';
+    if (seconds < 60) return `${Math.round(seconds)}s`;
+    const mins = Math.floor(seconds / 60);
+    const secs = Math.round(seconds % 60);
+    return `${mins}m ${secs}s`;
+  };
 
   return (
     <div className="fixed inset-0 z-50 flex flex-col items-center justify-center bg-white/95 backdrop-blur-md transition-all duration-500">
@@ -94,11 +157,141 @@ export const BridgeLoader: React.FC = () => {
           Building the Bridge
         </h2>
         <div className="h-8 overflow-hidden">
-          <p key={messageIndex} className="text-gray-500 font-medium animate-slide-up-fade">
-            {messages[messageIndex]}
+          <p key={progress?.message || messageIndex} className="text-gray-500 font-medium animate-slide-up-fade">
+            {progress?.message || defaultMessages[messageIndex]}
           </p>
         </div>
       </div>
+
+      {/* Progress Panel - Only show when we have progress data */}
+      {progress && (
+        <div className="mt-8 w-full max-w-2xl bg-white rounded-2xl shadow-lg border border-gray-200 overflow-hidden">
+          {/* Progress Header */}
+          <div className="bg-gradient-to-r from-violet-50 to-blue-50 px-6 py-4 border-b border-gray-100">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <div className={`p-2 rounded-lg ${phaseInfo.bg}`}>
+                  <PhaseIcon className={`w-5 h-5 ${phaseInfo.color} ${progress.phase === 'extracting' || progress.phase === 'grading' || progress.phase === 'loading' || progress.phase === 'initializing' ? 'animate-spin' : ''}`} />
+                </div>
+                <div>
+                  <h3 className="font-semibold text-gray-900 capitalize">
+                    {progress.phase === 'extracting' && progress.sub_phase === 'llm_call' 
+                      ? 'Calling AI Model' 
+                      : progress.phase?.replace('_', ' ') || 'Processing'}
+                  </h3>
+                  <p className="text-sm text-gray-500">
+                    {progress.elapsed_seconds !== undefined && `Elapsed: ${formatTime(progress.elapsed_seconds)}`}
+                  </p>
+                </div>
+              </div>
+              
+              {/* File Counter */}
+              {progress.total_files !== undefined && progress.files_completed !== undefined && (
+                <div className="text-right">
+                  <div className="text-2xl font-bold text-gray-900">
+                    {progress.files_completed}<span className="text-gray-400">/{progress.total_files}</span>
+                  </div>
+                  <p className="text-xs text-gray-500">Files Completed</p>
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* Progress Bar */}
+          {progress.total_files && progress.total_files > 0 && (
+            <div className="px-6 py-4">
+              <div className="flex items-center justify-between mb-2">
+                <span className="text-sm font-medium text-gray-700">Overall Progress</span>
+                <span className="text-sm font-semibold text-violet-600">{progressPercent}%</span>
+              </div>
+              <div className="h-3 bg-gray-100 rounded-full overflow-hidden">
+                <div 
+                  className="h-full bg-gradient-to-r from-violet-500 to-blue-500 rounded-full transition-all duration-500 ease-out"
+                  style={{ width: `${progressPercent}%` }}
+                />
+              </div>
+            </div>
+          )}
+
+          {/* Current File Info */}
+          {progress.current_filename && progress.phase !== 'complete' && (
+            <div className="px-6 py-4 border-t border-gray-100 bg-gray-50/50">
+              <div className="flex items-center gap-3">
+                <FileText className="w-5 h-5 text-gray-400" />
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-medium text-gray-900 truncate">
+                    {progress.current_filename}
+                  </p>
+                  <p className="text-xs text-gray-500">
+                    {progress.doc_type && `${progress.doc_type.charAt(0).toUpperCase() + progress.doc_type.slice(1)} Statement`}
+                    {progress.current_file && progress.total_files && ` • File ${progress.current_file} of ${progress.total_files}`}
+                  </p>
+                </div>
+                
+                {/* File score if available */}
+                {progress.file_score !== undefined && (
+                  <div className="text-right">
+                    <span className={`text-lg font-bold ${
+                      progress.file_score >= 90 ? 'text-green-600' :
+                      progress.file_score >= 70 ? 'text-amber-600' :
+                      'text-red-600'
+                    }`}>
+                      {progress.file_score}%
+                    </span>
+                    {progress.file_grade && (
+                      <p className="text-xs text-gray-500">{progress.file_grade}</p>
+                    )}
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+
+          {/* Completion Summary */}
+          {progress.phase === 'complete' && progress.overall_score !== undefined && (
+            <div className="px-6 py-4 border-t border-gray-100 bg-gradient-to-r from-green-50 to-emerald-50">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  <CheckCircle className="w-6 h-6 text-green-500" />
+                  <div>
+                    <p className="font-semibold text-gray-900">Test Complete</p>
+                    <p className="text-sm text-gray-500">
+                      {progress.fields_correct !== undefined && `${progress.fields_correct} fields correct`}
+                      {progress.fields_wrong !== undefined && progress.fields_wrong > 0 && `, ${progress.fields_wrong} wrong`}
+                      {progress.fields_missing !== undefined && progress.fields_missing > 0 && `, ${progress.fields_missing} missing`}
+                    </p>
+                  </div>
+                </div>
+                <div className="text-right">
+                  <span className={`text-3xl font-bold ${
+                    progress.overall_score >= 90 ? 'text-green-600' :
+                    progress.overall_score >= 70 ? 'text-amber-600' :
+                    'text-red-600'
+                  }`}>
+                    {progress.overall_score}%
+                  </span>
+                  {progress.overall_grade && (
+                    <p className="text-sm font-medium text-gray-600">{progress.overall_grade}</p>
+                  )}
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Error Display */}
+          {progress.error && (
+            <div className="px-6 py-4 border-t border-red-100 bg-red-50">
+              <div className="flex items-start gap-3">
+                <AlertCircle className="w-5 h-5 text-red-500 mt-0.5" />
+                <div>
+                  <p className="font-medium text-red-800">Error</p>
+                  <p className="text-sm text-red-600">{progress.error}</p>
+                </div>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
 
       <style>{`
         @keyframes grid-move {

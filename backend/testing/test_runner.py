@@ -107,18 +107,6 @@ TEST_COMPANIES: List[TestCompany] = [
         id="pneo",
         name="pNeo LLC",
         files=[
-            # Auto-detect mode - extracts both IS and BS from same file
-            TestFile(filename="2024_Q4_pNeo_Consolidated_Financial_Reports.pdf", doc_type="auto", period="2024",
-                     description="Auto-detect: Consolidated P&L and Balance Sheet for 2024"),
-            TestFile(filename="FY_2023_pNeo_Financial_Packet.pdf", doc_type="auto", period="2023",
-                     description="Auto-detect: FY2023 Financial Packet with IS and BS"),
-        ],
-        answer_key_path="pneo_answer_key.json"
-    ),
-    TestCompany(
-        id="pneo-separate",
-        name="pNeo LLC (Separate)",
-        files=[
             # Income statements
             TestFile(filename="FY_2023_pNeo_Financial_Packet.pdf", doc_type="income", period="2023",
                      description="FY2023 Financial Packet with Income Statement summary"),
@@ -131,6 +119,32 @@ TEST_COMPANIES: List[TestCompany] = [
                      description="Consolidated Balance Sheet as of 12/31/24"),
         ],
         answer_key_path="pneo_answer_key.json"
+    ),
+    TestCompany(
+        id="luminex",
+        name="Candle-Lite (Luminex)",
+        files=[
+            # Annual Income Statements from PDFs
+            TestFile(filename="Luminex/Luminex 2023 FS  - FINAL.pdf", doc_type="income", period="FY2023",
+                     description="FY2023 audited financial statements with Income Statement"),
+            TestFile(filename="Luminex/Luminex 2024 FS FINAL.pdf", doc_type="income", period="FY2024",
+                     description="FY2024 audited financial statements with Income Statement"),
+            TestFile(filename="Luminex/Luminex 2025 FS v2 6.24.pdf", doc_type="income", period="FY2025",
+                     description="FY2025 audited financial statements with Income Statement"),
+            # Annual Balance Sheets from PDFs
+            TestFile(filename="Luminex/Luminex 2023 FS  - FINAL.pdf", doc_type="balance", period="FY2023",
+                     description="FY2023 audited financial statements with Balance Sheet"),
+            TestFile(filename="Luminex/Luminex 2024 FS FINAL.pdf", doc_type="balance", period="FY2024",
+                     description="FY2024 audited financial statements with Balance Sheet"),
+            TestFile(filename="Luminex/Luminex 2025 FS v2 6.24.pdf", doc_type="balance", period="FY2025",
+                     description="FY2025 audited financial statements with Balance Sheet"),
+            # Interim financials from Excel
+            TestFile(filename="Luminex/2025-11-30 Candle-Lite Interim Financial Statements.xlsx", doc_type="income", period="FY2026 YTD",
+                     description="Interim YTD Income Statement through Nov 30, 2025"),
+            TestFile(filename="Luminex/2025-11-30 Candle-Lite Interim Financial Statements.xlsx", doc_type="balance", period="FY2026 YTD",
+                     description="Interim Balance Sheet as of Nov 30, 2025"),
+        ],
+        answer_key_path="luminex_answer_key.json"
     )
 ]
 
@@ -619,7 +633,7 @@ def grade_period(
 # TEST EXECUTION
 # =============================================================================
 
-async def run_test(config: TestRunConfig) -> TestRunResult:
+async def run_test(config: TestRunConfig, progress_callback=None) -> TestRunResult:
     """
     Execute a full test run for a company.
     
@@ -629,9 +643,38 @@ async def run_test(config: TestRunConfig) -> TestRunResult:
     3. Compare results to answer key
     4. Calculate grades
     5. Save results to history
+    
+    Args:
+        config: Test run configuration
+        progress_callback: Optional async callback for progress updates.
+                          Called with (test_id, progress_data) where progress_data contains:
+                          - phase: current phase (loading, extracting, grading, complete)
+                          - current_file: index of current file being processed (1-based)
+                          - total_files: total number of files to process
+                          - current_filename: name of current file
+                          - current_period: index of current period (1-based)
+                          - total_periods_in_file: periods in current file
+                          - message: human-readable status message
+                          - elapsed_seconds: time elapsed so far
+                          - files_completed: number of files fully processed
     """
     start_time = time.time()
     test_id = str(uuid.uuid4())
+    
+    async def emit_progress(phase: str, message: str, **kwargs):
+        """Helper to emit progress updates"""
+        if progress_callback:
+            progress_data = {
+                "phase": phase,
+                "message": message,
+                "elapsed_seconds": round(time.time() - start_time, 1),
+                "test_id": test_id,
+                **kwargs
+            }
+            try:
+                await progress_callback(test_id, progress_data)
+            except Exception as e:
+                logger.warning(f"Progress callback failed: {e}")
     
     logger.info(f"=" * 80)
     logger.info(f"[TEST RUN {test_id}] Starting execution")
@@ -648,8 +691,27 @@ async def run_test(config: TestRunConfig) -> TestRunResult:
     logger.info(f"[TEST RUN {test_id}] Model: {config.model_name}")
     logger.info(f"[TEST RUN {test_id}] DPI: {config.dpi}, Max Pages: {config.max_pages}, Tolerance: {config.tolerance_percent}%")
     
+    # Emit initial progress
+    await emit_progress(
+        "initializing",
+        f"Initializing test for {company.name}...",
+        total_files=len(company.files),
+        current_file=0,
+        files_completed=0,
+        company_name=company.name,
+        model_name=config.model_name
+    )
+    
     # Load answer key
     logger.info(f"[TEST RUN {test_id}] Loading answer key for {config.company_id}...")
+    await emit_progress(
+        "loading",
+        "Loading answer key...",
+        total_files=len(company.files),
+        current_file=0,
+        files_completed=0
+    )
+    
     answer_key = load_answer_key(config.company_id)
     if not answer_key:
         logger.warning(f"[TEST RUN {test_id}] No answer key found for {config.company_id}, will compare against extracted data only")
@@ -669,6 +731,8 @@ async def run_test(config: TestRunConfig) -> TestRunResult:
     errors = []
     fallback_used_in_test = False  # Track if any file used fallback
     
+    files_completed = 0
+    
     # Process each file
     for file_idx, test_file in enumerate(company.files, 1):
         file_path = EXAMPLE_FINANCIALS_DIR / test_file.filename
@@ -677,6 +741,17 @@ async def run_test(config: TestRunConfig) -> TestRunResult:
         logger.info(f"[TEST RUN {test_id}] Processing file {file_idx}/{len(company.files)}: {test_file.filename}")
         logger.info(f"[TEST RUN {test_id}] Doc Type: {test_file.doc_type}, Expected Period: {test_file.period}")
         logger.info(f"[TEST RUN {test_id}] File Path: {file_path}")
+        
+        # Emit progress for file start
+        await emit_progress(
+            "extracting",
+            f"Processing {test_file.filename}...",
+            total_files=len(company.files),
+            current_file=file_idx,
+            current_filename=test_file.filename,
+            doc_type=test_file.doc_type,
+            files_completed=files_completed
+        )
         
         if not file_path.exists():
             logger.error(f"[TEST RUN {test_id}] ❌ FILE NOT FOUND: {file_path}")
@@ -697,6 +772,18 @@ async def run_test(config: TestRunConfig) -> TestRunResult:
             
             file_start = time.time()
             
+            # Emit progress - starting LLM extraction
+            await emit_progress(
+                "extracting",
+                f"Calling AI model to extract from {test_file.filename}...",
+                total_files=len(company.files),
+                current_file=file_idx,
+                current_filename=test_file.filename,
+                doc_type=test_file.doc_type,
+                files_completed=files_completed,
+                sub_phase="llm_call"
+            )
+            
             # Reset fallback flag before processing
             reset_fallback_flag()
             
@@ -713,6 +800,18 @@ async def run_test(config: TestRunConfig) -> TestRunResult:
             
             file_duration = time.time() - file_start
             logger.info(f"[TEST RUN {test_id}] ✓ spread_financials() completed in {file_duration:.2f}s")
+            
+            # Emit progress - extraction complete, now grading
+            await emit_progress(
+                "grading",
+                f"Grading extraction results for {test_file.filename}...",
+                total_files=len(company.files),
+                current_file=file_idx,
+                current_filename=test_file.filename,
+                doc_type=test_file.doc_type,
+                files_completed=files_completed,
+                file_extraction_time=round(file_duration, 1)
+            )
             
             # Check if fallback prompt was used
             if was_fallback_used():
@@ -907,8 +1006,21 @@ async def run_test(config: TestRunConfig) -> TestRunResult:
                 file_results.append(file_grade)
                 total_score += file_score
                 total_files += 1
+                files_completed += 1
                 
                 logger.info(f"[TEST RUN {test_id}] ✓ File processing complete: {file_score:.1f}% ({file_grade.overall_grade.value})")
+                
+                # Emit progress - file complete
+                await emit_progress(
+                    "file_complete",
+                    f"Completed {test_file.filename}: {file_score:.1f}%",
+                    total_files=len(company.files),
+                    current_file=file_idx,
+                    current_filename=test_file.filename,
+                    files_completed=files_completed,
+                    file_score=round(file_score, 1),
+                    file_grade=file_grade.overall_grade.value
+                )
             
         except Exception as e:
             error_trace = traceback.format_exc()
@@ -925,8 +1037,20 @@ async def run_test(config: TestRunConfig) -> TestRunResult:
                 overall_score=0.0,
                 overall_grade=GradeLevel.FAILING
             ))
+            files_completed += 1
             
             logger.info(f"[TEST RUN {test_id}] Added failed result for {test_file.filename}")
+            
+            # Emit progress - file failed
+            await emit_progress(
+                "file_error",
+                f"Error processing {test_file.filename}: {str(e)[:100]}",
+                total_files=len(company.files),
+                current_file=file_idx,
+                current_filename=test_file.filename,
+                files_completed=files_completed,
+                error=str(e)[:200]
+            )
     
     # Calculate overall score
     logger.info(f"[TEST RUN {test_id}] " + "=" * 70)
@@ -996,6 +1120,20 @@ async def run_test(config: TestRunConfig) -> TestRunResult:
         f"in {execution_time:.1f}s"
     )
     logger.info(f"=" * 80)
+    
+    # Emit final completion progress
+    await emit_progress(
+        "complete",
+        f"Test complete: {overall_score:.1f}% ({result.overall_grade.value})",
+        total_files=total_files,
+        files_completed=total_files,
+        overall_score=round(overall_score, 1),
+        overall_grade=result.overall_grade.value,
+        total_periods=total_periods,
+        fields_correct=fields_correct,
+        fields_wrong=fields_wrong,
+        fields_missing=fields_missing
+    )
     
     return result
 

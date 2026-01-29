@@ -1,9 +1,9 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { ArrowLeft, FlaskConical, RefreshCw, AlertCircle, Wifi, WifiOff } from 'lucide-react';
 import { TestConfigPanel } from './TestConfigPanel';
 import { TestResultsComparison } from './TestResultsComparison';
 import { TestHistoryTable } from './TestHistoryTable';
-import { BridgeLoader } from './BridgeLoader';
+import { BridgeLoader, TestProgress } from './BridgeLoader';
 import { testingApi } from '../../testingApi';
 import {
   TestCompany,
@@ -32,10 +32,12 @@ export const TestingPage: React.FC<TestingPageProps> = ({ onBack }) => {
   const [error, setError] = useState<string | null>(null);
   const [connectionStatus, setConnectionStatus] = useState<ConnectionStatus>(connectionManager.getStatus());
   const [isManualReconnecting, setIsManualReconnecting] = useState(false);
+  const [testProgress, setTestProgress] = useState<TestProgress | null>(null);
   
   // Track if initial load has been attempted
   const initialLoadAttempted = useRef(false);
   const isMounted = useRef(true);
+  const wsRef = useRef<WebSocket | null>(null);
 
   // Subscribe to connection status (connection manager is already started by App.tsx)
   useEffect(() => {
@@ -64,6 +66,77 @@ export const TestingPage: React.FC<TestingPageProps> = ({ onBack }) => {
     loadStatus();
     loadHistory();
   }, []);
+
+  // WebSocket connection for test progress updates
+  const connectWebSocket = useCallback(() => {
+    // Close existing connection if any
+    if (wsRef.current && wsRef.current.readyState !== WebSocket.CLOSED) {
+      wsRef.current.close();
+    }
+
+    // Determine WebSocket URL
+    const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+    const apiBase = import.meta.env.VITE_API_URL || '';
+    let wsUrl: string;
+    
+    if (apiBase && apiBase.startsWith('http')) {
+      // External API URL - convert to WebSocket
+      wsUrl = apiBase.replace(/^https?/, wsProtocol.replace(':', '')) + '/ws/progress';
+    } else {
+      // Same origin
+      wsUrl = `${wsProtocol}//${window.location.host}/ws/progress`;
+    }
+
+    console.log('[TESTING PAGE] Connecting to WebSocket for progress updates:', wsUrl);
+    
+    const ws = new WebSocket(wsUrl);
+    wsRef.current = ws;
+
+    ws.onopen = () => {
+      console.log('[TESTING PAGE] WebSocket connected for progress updates');
+    };
+
+    ws.onmessage = (event) => {
+      try {
+        const data = JSON.parse(event.data);
+        
+        // Handle test_progress messages
+        if (data.type === 'test_progress' && data.payload) {
+          console.log('[TESTING PAGE] Progress update:', data.payload);
+          if (isMounted.current) {
+            setTestProgress(data.payload as TestProgress);
+          }
+        }
+      } catch (e) {
+        console.warn('[TESTING PAGE] Failed to parse WebSocket message:', e);
+      }
+    };
+
+    ws.onerror = (error) => {
+      console.error('[TESTING PAGE] WebSocket error:', error);
+    };
+
+    ws.onclose = () => {
+      console.log('[TESTING PAGE] WebSocket closed');
+    };
+
+    return ws;
+  }, []);
+
+  // Disconnect WebSocket when not running a test
+  const disconnectWebSocket = useCallback(() => {
+    if (wsRef.current) {
+      wsRef.current.close();
+      wsRef.current = null;
+    }
+  }, []);
+
+  // Cleanup WebSocket on unmount
+  useEffect(() => {
+    return () => {
+      disconnectWebSocket();
+    };
+  }, [disconnectWebSocket]);
 
   const loadStatus = async () => {
     console.log('[TESTING PAGE] Loading status...');
@@ -172,6 +245,10 @@ export const TestingPage: React.FC<TestingPageProps> = ({ onBack }) => {
       setStatus('running');
       setError(null);
       setCurrentResult(null);
+      setTestProgress(null);
+
+      // Connect WebSocket for progress updates
+      connectWebSocket();
 
       const config = {
         company_id: selectedCompany.id,
@@ -203,6 +280,12 @@ export const TestingPage: React.FC<TestingPageProps> = ({ onBack }) => {
       setCurrentResult(result);
       setStatus('complete');
       
+      // Disconnect WebSocket after a short delay to show final progress
+      setTimeout(() => {
+        disconnectWebSocket();
+        setTestProgress(null);
+      }, 2000);
+      
       // Refresh history
       console.log('[TESTING PAGE] Refreshing history...');
       loadHistory();
@@ -229,6 +312,10 @@ export const TestingPage: React.FC<TestingPageProps> = ({ onBack }) => {
       
       setError(errorMessage);
       setStatus('error');
+      
+      // Disconnect WebSocket on error
+      disconnectWebSocket();
+      setTestProgress(null);
     }
   };
 
@@ -271,7 +358,7 @@ export const TestingPage: React.FC<TestingPageProps> = ({ onBack }) => {
     <div className="min-h-[calc(100vh-80px)] bg-gradient-to-br from-violet-50/50 via-white to-purple-50/50">
       {/* Header */}
       <div className="bg-white border-b border-gray-200 sticky top-[73px] z-30">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4">
+        <div className="max-w-[95%] mx-auto px-4 sm:px-6 lg:px-8 py-4">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-4">
               <button
@@ -369,8 +456,8 @@ export const TestingPage: React.FC<TestingPageProps> = ({ onBack }) => {
       </div>
 
       {/* Main Content */}
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
-        {status === 'running' && <BridgeLoader />}
+      <div className="max-w-[95%] mx-auto px-4 sm:px-6 lg:px-8 py-6">
+        {status === 'running' && <BridgeLoader progress={testProgress} />}
         {status === 'loading' && (
           <div className="flex items-center justify-center py-20">
             <div className="text-center">
@@ -399,7 +486,7 @@ export const TestingPage: React.FC<TestingPageProps> = ({ onBack }) => {
         )}
 
         {(status === 'idle' || status === 'running') && !currentResult && (
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+          <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
             {/* Config Panel */}
             <div className="lg:col-span-1">
               <TestConfigPanel
@@ -419,7 +506,7 @@ export const TestingPage: React.FC<TestingPageProps> = ({ onBack }) => {
             </div>
 
             {/* History */}
-            <div className="lg:col-span-2">
+            <div className="lg:col-span-3">
               <TestHistoryTable
                 history={history}
                 onViewResult={handleViewResult}
