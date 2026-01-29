@@ -16,20 +16,45 @@ pip install --upgrade pip
 if [ -f "requirements-render.txt" ]; then
     echo "Installing from requirements-render.txt (combined)..."
     pip install -r requirements-render.txt
+    
+    # Verify CRITICAL web framework packages were installed
+    echo ""
+    echo "Verifying critical backend packages..."
+    python -c "import uvicorn; print(f'✓ uvicorn {uvicorn.__version__}')" || { 
+        echo "✗ CRITICAL ERROR: uvicorn not installed!"
+        echo "This is required for the web server to run."
+        echo "Attempting to install uvicorn explicitly..."
+        pip install uvicorn[standard]>=0.24.0
+        python -c "import uvicorn; print(f'✓ uvicorn {uvicorn.__version__}')" || exit 1
+    }
+    
+    python -c "import fastapi; print(f'✓ fastapi {fastapi.__version__}')" || { 
+        echo "✗ CRITICAL ERROR: fastapi not installed!"
+        echo "Attempting to install fastapi explicitly..."
+        pip install fastapi>=0.104.0
+        python -c "import fastapi; print(f'✓ fastapi {fastapi.__version__}')" || exit 1
+    }
+    
+    python -c "import websockets; print(f'✓ websockets {websockets.__version__}')" || { 
+        echo "⚠ WARNING: websockets not installed, installing..."
+        pip install websockets>=12.0
+    }
+    
+    echo "✓ All critical backend packages verified"
 else
     echo "Installing from separate requirements files..."
     pip install -r requirements.txt
     pip install -r backend/requirements.txt
 fi
 
-# Verify critical packages
-echo "Verifying installations..."
-python -c "import uvicorn; print(f'✓ uvicorn {uvicorn.__version__}')" || { echo "✗ ERROR: uvicorn not installed!"; exit 1; }
-python -c "import fastapi; print(f'✓ fastapi {fastapi.__version__}')" || { echo "✗ ERROR: fastapi not installed!"; exit 1; }
+# Verify AI packages (optional but recommended)
+echo ""
+echo "Verifying AI packages..."
 python -c "import anthropic; print(f'✓ anthropic {anthropic.__version__}')" || echo "⚠ WARNING: anthropic not installed (optional)"
 python -c "import openai; print(f'✓ openai {openai.__version__}')" || echo "⚠ WARNING: openai not installed (optional)"
 
 # Install Node dependencies and build frontend
+echo ""
 echo "Checking if frontend directory exists..."
 if [ ! -d "frontend" ]; then
     echo "✗ ERROR: frontend directory not found!"
@@ -74,9 +99,11 @@ fi
 
 cd ..
 
+echo ""
 echo "====================================="
 echo "Build complete!"
 echo "====================================="
 echo "✓ Python dependencies installed"
+echo "✓ Backend packages verified (uvicorn, fastapi)"
 echo "✓ Frontend built and verified"
 echo "Ready for deployment"
