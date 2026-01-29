@@ -27,6 +27,8 @@ export const TestingPage: React.FC<TestingPageProps> = ({ onBack }) => {
   const [selectedModel, setSelectedModel] = useState<AvailableModel | undefined>();
   const [promptContent, setPromptContent] = useState<string>('');
   const [extendedThinking, setExtendedThinking] = useState<boolean>(false);
+  const [parallel, setParallel] = useState<boolean>(true);
+  const [maxConcurrent, setMaxConcurrent] = useState<number>(3);
   const [currentResult, setCurrentResult] = useState<TestRunResult | null>(null);
   const [history, setHistory] = useState<TestRunSummary[]>([]);
   const [historyLoading, setHistoryLoading] = useState(false);
@@ -100,6 +102,7 @@ export const TestingPage: React.FC<TestingPageProps> = ({ onBack }) => {
     ws.onmessage = (event) => {
       try {
         const data = JSON.parse(event.data);
+        console.log('[TESTING PAGE] WebSocket message received:', data.type, data);
         
         // Handle test_progress messages
         if (data.type === 'test_progress' && data.payload) {
@@ -240,6 +243,7 @@ export const TestingPage: React.FC<TestingPageProps> = ({ onBack }) => {
     console.log('[TESTING PAGE] Company:', selectedCompany.id, '-', selectedCompany.name);
     console.log('[TESTING PAGE] Model:', selectedModel.id, '-', selectedModel.name);
     console.log('[TESTING PAGE] Prompt Override:', promptContent ? `Yes (${promptContent.length} chars)` : 'No');
+    console.log('[TESTING PAGE] Parallel Processing:', parallel ? `Yes (max ${maxConcurrent} concurrent)` : 'No (sequential)');
     console.log('[TESTING PAGE] ═══════════════════════════════════════════════');
 
     try {
@@ -256,6 +260,8 @@ export const TestingPage: React.FC<TestingPageProps> = ({ onBack }) => {
         model_name: selectedModel.id,
         prompt_override: promptContent || undefined,
         extended_thinking: extendedThinking,
+        parallel: parallel,
+        max_concurrent: maxConcurrent,
       };
       
       console.log('[TESTING PAGE] Calling testingApi.runTest()...', config);
@@ -508,10 +514,14 @@ export const TestingPage: React.FC<TestingPageProps> = ({ onBack }) => {
                 selectedModel={selectedModel}
                 promptContent={promptContent}
                 extendedThinking={extendedThinking}
+                parallel={parallel}
+                maxConcurrent={maxConcurrent}
                 onSelectCompany={setSelectedCompany}
                 onSelectModel={setSelectedModel}
                 onPromptChange={setPromptContent}
                 onExtendedThinkingChange={setExtendedThinking}
+                onParallelChange={setParallel}
+                onMaxConcurrentChange={setMaxConcurrent}
                 onRunTest={handleRunTest}
                 isRunning={status === 'running'}
               />

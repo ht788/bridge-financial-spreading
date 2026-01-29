@@ -16,6 +16,7 @@ import logging
 import time
 import sqlite3
 import traceback
+import asyncio
 from pathlib import Path
 from datetime import datetime, timezone
 from typing import Optional, Dict, Any, List, Tuple
@@ -633,6 +634,381 @@ def grade_period(
 # TEST EXECUTION
 # =============================================================================
 
+# Result type for file processing (used internally)
+from dataclasses import dataclass, field as dataclass_field
+
+@dataclass
+class _FileProcessingResult:
+    """Internal result type for parallel file processing"""
+    file_idx: int
+    test_file: TestFile
+    success: bool
+    file_grades: List[FileGrade] = dataclass_field(default_factory=list)
+    total_periods: int = 0
+    total_fields: int = 0
+    fields_correct: int = 0
+    fields_partial: int = 0
+    fields_wrong: int = 0
+    fields_missing: int = 0
+    fallback_used: bool = False
+    error: Optional[str] = None
+    duration_seconds: float = 0.0
+
+
+async def _process_test_file(
+    test_id: str,
+    file_idx: int,
+    test_file: TestFile,
+    file_path: Path,
+    config: TestRunConfig,
+    answer_key: Optional[CompanyAnswerKey],
+    total_files: int,
+    semaphore: asyncio.Semaphore,
+    progress_callback=None,
+    start_time: float = 0.0,
+) -> _FileProcessingResult:
+    """
+    Process a single test file with semaphore-controlled concurrency.
+    
+    This helper function encapsulates the per-file logic for parallel execution.
+    Uses asyncio.to_thread to run the synchronous spread_financials without blocking.
+    
+    Args:
+        test_id: Unique ID for this test run
+        file_idx: 1-based index of this file in the test
+        test_file: The test file definition
+        file_path: Full path to the file
+        config: Test run configuration
+        answer_key: Company answer key (optional)
+        total_files: Total number of files in this test
+        semaphore: Asyncio semaphore for concurrency control
+        progress_callback: Optional async callback for progress updates
+        start_time: Test start time for elapsed time calculation
+    
+    Returns:
+        _FileProcessingResult with all grading data
+    """
+    result = _FileProcessingResult(
+        file_idx=file_idx,
+        test_file=test_file,
+        success=False
+    )
+    
+    async def emit_progress(phase: str, message: str, **kwargs):
+        """Helper to emit progress updates"""
+        if progress_callback:
+            progress_data = {
+                "phase": phase,
+                "message": message,
+                "elapsed_seconds": round(time.time() - start_time, 1) if start_time else 0,
+                "test_id": test_id,
+                **kwargs
+            }
+            try:
+                await progress_callback(test_id, progress_data)
+            except Exception as e:
+                logger.warning(f"Progress callback failed: {e}")
+    
+    # Acquire semaphore to limit concurrent extractions
+    async with semaphore:
+        logger.info(f"[TEST RUN {test_id}] " + "=" * 70)
+        logger.info(f"[TEST RUN {test_id}] Processing file {file_idx}/{total_files}: {test_file.filename}")
+        logger.info(f"[TEST RUN {test_id}] Doc Type: {test_file.doc_type}, Expected Period: {test_file.period}")
+        logger.info(f"[TEST RUN {test_id}] File Path: {file_path}")
+        
+        # Emit progress for file start
+        await emit_progress(
+            "extracting",
+            f"Processing {test_file.filename}...",
+            total_files=total_files,
+            current_file=file_idx,
+            current_filename=test_file.filename,
+            doc_type=test_file.doc_type,
+            files_completed=0  # Will be updated by caller
+        )
+        
+        if not file_path.exists():
+            logger.error(f"[TEST RUN {test_id}] ❌ FILE NOT FOUND: {file_path}")
+            result.error = f"File not found: {test_file.filename}"
+            result.file_grades.append(FileGrade(
+                filename=test_file.filename,
+                doc_type=test_file.doc_type,
+                periods=[],
+                overall_score=0.0,
+                overall_grade=GradeLevel.FAILING
+            ))
+            return result
+        
+        logger.info(f"[TEST RUN {test_id}] ✓ File exists, size: {file_path.stat().st_size} bytes")
+        
+        try:
+            logger.info(f"[TEST RUN {test_id}] Calling spread_financials()...")
+            logger.info(f"[TEST RUN {test_id}]   - file_path: {file_path}")
+            logger.info(f"[TEST RUN {test_id}]   - doc_type: {test_file.doc_type}")
+            logger.info(f"[TEST RUN {test_id}]   - multi_period: True")
+            logger.info(f"[TEST RUN {test_id}]   - model_override: {config.model_name}")
+            logger.info(f"[TEST RUN {test_id}]   - extended_thinking: {config.extended_thinking}")
+            logger.info(f"[TEST RUN {test_id}]   - dpi: {config.dpi}")
+            logger.info(f"[TEST RUN {test_id}]   - max_pages: {config.max_pages}")
+            
+            file_start = time.time()
+            
+            # Emit progress - starting LLM extraction
+            await emit_progress(
+                "extracting",
+                f"Calling AI model to extract from {test_file.filename}...",
+                total_files=total_files,
+                current_file=file_idx,
+                current_filename=test_file.filename,
+                doc_type=test_file.doc_type,
+                files_completed=0,
+                sub_phase="llm_call"
+            )
+            
+            # Reset fallback flag before processing
+            reset_fallback_flag()
+            
+            # Run the spreader using asyncio.to_thread to prevent blocking
+            extraction_result = await asyncio.to_thread(
+                spread_financials,
+                file_path=str(file_path),
+                doc_type=test_file.doc_type,
+                multi_period=True,
+                model_override=config.model_name,
+                extended_thinking=config.extended_thinking,
+                dpi=config.dpi,
+                max_pages=config.max_pages
+            )
+            
+            result.duration_seconds = time.time() - file_start
+            logger.info(f"[TEST RUN {test_id}] ✓ spread_financials() completed in {result.duration_seconds:.2f}s")
+            
+            # Emit progress - extraction complete, now grading
+            await emit_progress(
+                "grading",
+                f"Grading extraction results for {test_file.filename}...",
+                total_files=total_files,
+                current_file=file_idx,
+                current_filename=test_file.filename,
+                doc_type=test_file.doc_type,
+                files_completed=0,
+                file_extraction_time=round(result.duration_seconds, 1)
+            )
+            
+            # Check if fallback prompt was used
+            if was_fallback_used():
+                result.fallback_used = True
+                logger.warning(f"[TEST RUN {test_id}] ⚠️ Fallback prompt was used for {test_file.filename}")
+            
+            # Handle combined extraction results (when doc_type='auto')
+            if isinstance(extraction_result, CombinedFinancialExtraction):
+                logger.info(f"[TEST RUN {test_id}] ✓ Received CombinedFinancialExtraction result")
+                logger.info(f"[TEST RUN {test_id}]   - Has Income Statement: {extraction_result.detected_types.has_income_statement}")
+                logger.info(f"[TEST RUN {test_id}]   - Has Balance Sheet: {extraction_result.detected_types.has_balance_sheet}")
+                
+                # Process each statement type that was detected
+                statements_to_process = []
+                if extraction_result.income_statement:
+                    statements_to_process.append(('income', extraction_result.income_statement))
+                if extraction_result.balance_sheet:
+                    statements_to_process.append(('balance', extraction_result.balance_sheet))
+                
+                for stmt_doc_type, stmt_result in statements_to_process:
+                    logger.info(f"[TEST RUN {test_id}] Processing {stmt_doc_type} statement from combined result...")
+                    
+                    # Get answer key for this doc type
+                    file_answer_key = None
+                    if answer_key:
+                        file_answer_key = next(
+                            (f for f in answer_key.files 
+                             if f.filename == test_file.filename and f.doc_type == stmt_doc_type),
+                            None
+                        )
+                        if file_answer_key:
+                            logger.info(f"[TEST RUN {test_id}] Found answer key for {stmt_doc_type} with {len(file_answer_key.periods)} periods")
+                    
+                    # Grade each period
+                    period_grades: List[PeriodGrade] = []
+                    
+                    if hasattr(stmt_result, 'periods'):
+                        for period_idx, period in enumerate(stmt_result.periods, 1):
+                            period_label = period.period_label
+                            period_data = period.data.model_dump()
+                            
+                            logger.info(f"[TEST RUN {test_id}]   {stmt_doc_type.upper()} Period {period_idx}: '{period_label}'")
+                            
+                            # Get expected values for this period
+                            expected = {}
+                            if file_answer_key:
+                                period_answer = find_matching_period(
+                                    extracted_label=period_label,
+                                    answer_key_periods=file_answer_key.periods,
+                                    fuzzy_match=True
+                                )
+                                if period_answer:
+                                    expected = {
+                                        k: ExpectedLineItem(**v) if isinstance(v, dict) else v
+                                        for k, v in period_answer.expected.items()
+                                    }
+                            
+                            grade = grade_period(
+                                period_label=period_label,
+                                doc_type=stmt_doc_type,
+                                extracted_data=period_data,
+                                expected=expected,
+                                default_tolerance=config.tolerance_percent
+                            )
+                            period_grades.append(grade)
+                            logger.info(f"[TEST RUN {test_id}]   ✓ Period score: {grade.score:.1f}% ({grade.grade.value})")
+                            
+                            # Accumulate stats
+                            result.total_periods += 1
+                            result.total_fields += grade.total_fields
+                            result.fields_correct += grade.matched_fields
+                            result.fields_partial += grade.partial_fields
+                            result.fields_wrong += grade.wrong_fields
+                            result.fields_missing += grade.missing_fields
+                    
+                    # Calculate file-level score for this statement type
+                    if period_grades:
+                        file_score = sum(g.score for g in period_grades) / len(period_grades)
+                    else:
+                        file_score = 0.0
+                    
+                    file_grade = FileGrade(
+                        filename=test_file.filename,
+                        doc_type=stmt_doc_type,  # Use the actual statement type, not 'auto'
+                        periods=period_grades,
+                        overall_score=file_score,
+                        overall_grade=score_to_grade(file_score)
+                    )
+                    result.file_grades.append(file_grade)
+                    
+                    logger.info(f"[TEST RUN {test_id}] ✓ {stmt_doc_type.upper()} processing complete: {file_score:.1f}%")
+                
+            else:
+                # Standard single doc_type result (income or balance)
+                # Get answer key for this file - match BOTH filename AND doc_type
+                file_answer_key = None
+                if answer_key:
+                    file_answer_key = next(
+                        (f for f in answer_key.files 
+                         if f.filename == test_file.filename and f.doc_type == test_file.doc_type),
+                        None
+                    )
+                    if file_answer_key:
+                        logger.info(f"[TEST RUN {test_id}] Found answer key for {test_file.doc_type} with {len(file_answer_key.periods)} periods")
+                        logger.info(f"[TEST RUN {test_id}] Answer key periods: {[p.period_label for p in file_answer_key.periods]}")
+                    else:
+                        # Try fallback to filename-only match for backwards compatibility
+                        file_answer_key = next(
+                            (f for f in answer_key.files if f.filename == test_file.filename),
+                            None
+                        )
+                        if file_answer_key:
+                            logger.warning(
+                                f"[TEST RUN {test_id}] No exact doc_type match, using filename-only match "
+                                f"(file doc_type: {file_answer_key.doc_type}, test doc_type: {test_file.doc_type})"
+                            )
+                        else:
+                            logger.warning(f"[TEST RUN {test_id}] No answer key found for this file")
+                
+                # Grade each period
+                period_grades: List[PeriodGrade] = []
+                
+                logger.info(f"[TEST RUN {test_id}] Checking result structure...")
+                if hasattr(extraction_result, 'periods'):
+                    logger.info(f"[TEST RUN {test_id}] ✓ Result has multi-period structure with {len(extraction_result.periods)} periods")
+                    
+                    for period_idx, period in enumerate(extraction_result.periods, 1):
+                        period_label = period.period_label
+                        period_data = period.data.model_dump()
+                        
+                        logger.info(f"[TEST RUN {test_id}]   Period {period_idx}/{len(extraction_result.periods)}: '{period_label}'")
+                        logger.info(f"[TEST RUN {test_id}]     - Extracted fields: {len(period_data)}")
+                        
+                        # Get expected values for this period (using fuzzy matching)
+                        expected = {}
+                        if file_answer_key:
+                            period_answer = find_matching_period(
+                                extracted_label=period_label,
+                                answer_key_periods=file_answer_key.periods,
+                                fuzzy_match=True
+                            )
+                            if period_answer:
+                                expected = {
+                                    k: ExpectedLineItem(**v) if isinstance(v, dict) else v
+                                    for k, v in period_answer.expected.items()
+                                }
+                                logger.info(f"[TEST RUN {test_id}]     - Matched to answer key period: '{period_answer.period_label}'")
+                                logger.info(f"[TEST RUN {test_id}]     - Expected fields: {len(expected)}")
+                            else:
+                                logger.warning(f"[TEST RUN {test_id}]     - No expected values for period '{period_label}'")
+                        
+                        logger.info(f"[TEST RUN {test_id}]   Grading period '{period_label}'...")
+                        grade = grade_period(
+                            period_label=period_label,
+                            doc_type=test_file.doc_type,
+                            extracted_data=period_data,
+                            expected=expected,
+                            default_tolerance=config.tolerance_percent
+                        )
+                        period_grades.append(grade)
+                        logger.info(f"[TEST RUN {test_id}]   ✓ Period score: {grade.score:.1f}% ({grade.grade.value})")
+                        logger.info(f"[TEST RUN {test_id}]     - Matched: {grade.matched_fields}, Partial: {grade.partial_fields}, Wrong: {grade.wrong_fields}, Missing: {grade.missing_fields}")
+                        
+                        # Accumulate stats
+                        result.total_periods += 1
+                        result.total_fields += grade.total_fields
+                        result.fields_correct += grade.matched_fields
+                        result.fields_partial += grade.partial_fields
+                        result.fields_wrong += grade.wrong_fields
+                        result.fields_missing += grade.missing_fields
+                else:
+                    logger.warning(f"[TEST RUN {test_id}] ⚠️ Result does not have multi-period structure")
+                
+                # Calculate file-level score
+                if period_grades:
+                    file_score = sum(g.score for g in period_grades) / len(period_grades)
+                    logger.info(f"[TEST RUN {test_id}] File overall score: {file_score:.1f}%")
+                else:
+                    file_score = 0.0
+                    logger.warning(f"[TEST RUN {test_id}] No period grades - file score 0%")
+                
+                file_grade = FileGrade(
+                    filename=test_file.filename,
+                    doc_type=test_file.doc_type,
+                    periods=period_grades,
+                    overall_score=file_score,
+                    overall_grade=score_to_grade(file_score)
+                )
+                result.file_grades.append(file_grade)
+                
+                logger.info(f"[TEST RUN {test_id}] ✓ File processing complete: {file_score:.1f}% ({file_grade.overall_grade.value})")
+            
+            result.success = True
+            
+        except Exception as e:
+            error_trace = traceback.format_exc()
+            logger.error(f"[TEST RUN {test_id}] ❌ Error processing {test_file.filename}:")
+            logger.error(f"[TEST RUN {test_id}] {str(e)}")
+            logger.error(f"[TEST RUN {test_id}] Traceback:\n{error_trace}")
+            result.error = f"{test_file.filename}: {str(e)}"
+            
+            # Add failed file result
+            result.file_grades.append(FileGrade(
+                filename=test_file.filename,
+                doc_type=test_file.doc_type,
+                periods=[],
+                overall_score=0.0,
+                overall_grade=GradeLevel.FAILING
+            ))
+            
+            logger.info(f"[TEST RUN {test_id}] Added failed result for {test_file.filename}")
+    
+    return result
+
+
 async def run_test(config: TestRunConfig, progress_callback=None) -> TestRunResult:
     """
     Execute a full test run for a company.
@@ -672,6 +1048,7 @@ async def run_test(config: TestRunConfig, progress_callback=None) -> TestRunResu
                 **kwargs
             }
             try:
+                logger.info(f"[TEST RUN {test_id}] [PROGRESS] Emitting: {phase} - {message}")
                 await progress_callback(test_id, progress_data)
             except Exception as e:
                 logger.warning(f"Progress callback failed: {e}")
@@ -733,324 +1110,159 @@ async def run_test(config: TestRunConfig, progress_callback=None) -> TestRunResu
     
     files_completed = 0
     
-    # Process each file
-    for file_idx, test_file in enumerate(company.files, 1):
-        file_path = EXAMPLE_FINANCIALS_DIR / test_file.filename
+    # Log parallel processing configuration
+    processing_mode = "parallel" if config.parallel else "sequential"
+    logger.info(f"[TEST RUN {test_id}] Processing mode: {processing_mode}")
+    if config.parallel:
+        logger.info(f"[TEST RUN {test_id}] Max concurrent extractions: {config.max_concurrent}")
+    
+    # Create semaphore for concurrency control
+    semaphore = asyncio.Semaphore(config.max_concurrent if config.parallel else 1)
+    
+    # Emit progress for processing start
+    await emit_progress(
+        "extracting",
+        f"Starting {processing_mode} extraction of {len(company.files)} files...",
+        total_files=len(company.files),
+        current_file=0,
+        files_completed=0,
+        parallel=config.parallel,
+        max_concurrent=config.max_concurrent
+    )
+    
+    if config.parallel:
+        # PARALLEL PROCESSING: Create tasks for all files and run with asyncio.gather
+        logger.info(f"[TEST RUN {test_id}] Creating parallel tasks for {len(company.files)} files...")
         
-        logger.info(f"[TEST RUN {test_id}] " + "=" * 70)
-        logger.info(f"[TEST RUN {test_id}] Processing file {file_idx}/{len(company.files)}: {test_file.filename}")
-        logger.info(f"[TEST RUN {test_id}] Doc Type: {test_file.doc_type}, Expected Period: {test_file.period}")
-        logger.info(f"[TEST RUN {test_id}] File Path: {file_path}")
-        
-        # Emit progress for file start
-        await emit_progress(
-            "extracting",
-            f"Processing {test_file.filename}...",
-            total_files=len(company.files),
-            current_file=file_idx,
-            current_filename=test_file.filename,
-            doc_type=test_file.doc_type,
-            files_completed=files_completed
-        )
-        
-        if not file_path.exists():
-            logger.error(f"[TEST RUN {test_id}] ❌ FILE NOT FOUND: {file_path}")
-            errors.append(f"File not found: {test_file.filename}")
-            continue
-        
-        logger.info(f"[TEST RUN {test_id}] ✓ File exists, size: {file_path.stat().st_size} bytes")
-        
-        try:
-            logger.info(f"[TEST RUN {test_id}] Calling spread_financials()...")
-            logger.info(f"[TEST RUN {test_id}]   - file_path: {file_path}")
-            logger.info(f"[TEST RUN {test_id}]   - doc_type: {test_file.doc_type}")
-            logger.info(f"[TEST RUN {test_id}]   - multi_period: True")
-            logger.info(f"[TEST RUN {test_id}]   - model_override: {config.model_name}")
-            logger.info(f"[TEST RUN {test_id}]   - extended_thinking: {config.extended_thinking}")
-            logger.info(f"[TEST RUN {test_id}]   - dpi: {config.dpi}")
-            logger.info(f"[TEST RUN {test_id}]   - max_pages: {config.max_pages}")
+        tasks = []
+        for file_idx, test_file in enumerate(company.files, 1):
+            file_path = EXAMPLE_FINANCIALS_DIR / test_file.filename
             
-            file_start = time.time()
-            
-            # Emit progress - starting LLM extraction
-            await emit_progress(
-                "extracting",
-                f"Calling AI model to extract from {test_file.filename}...",
+            task = _process_test_file(
+                test_id=test_id,
+                file_idx=file_idx,
+                test_file=test_file,
+                file_path=file_path,
+                config=config,
+                answer_key=answer_key,
                 total_files=len(company.files),
-                current_file=file_idx,
-                current_filename=test_file.filename,
-                doc_type=test_file.doc_type,
-                files_completed=files_completed,
-                sub_phase="llm_call"
+                semaphore=semaphore,
+                progress_callback=progress_callback,
+                start_time=start_time
             )
+            tasks.append(task)
+        
+        # Execute all tasks in parallel (with semaphore limiting concurrent extractions)
+        logger.info(f"[TEST RUN {test_id}] Executing {len(tasks)} tasks in parallel (max_concurrent={config.max_concurrent})...")
+        processing_results = await asyncio.gather(*tasks, return_exceptions=True)
+        
+        # Process results from all tasks
+        for proc_result in processing_results:
+            if isinstance(proc_result, Exception):
+                # Handle unexpected exceptions from gather
+                logger.error(f"[TEST RUN {test_id}] Unexpected exception in parallel task: {proc_result}")
+                errors.append(f"Unexpected error: {str(proc_result)}")
+                continue
             
-            # Reset fallback flag before processing
-            reset_fallback_flag()
-            
-            # Run the spreader
-            result = spread_financials(
-                file_path=str(file_path),
-                doc_type=test_file.doc_type,
-                multi_period=True,
-                model_override=config.model_name,
-                extended_thinking=config.extended_thinking,
-                dpi=config.dpi,
-                max_pages=config.max_pages
-            )
-            
-            file_duration = time.time() - file_start
-            logger.info(f"[TEST RUN {test_id}] ✓ spread_financials() completed in {file_duration:.2f}s")
-            
-            # Emit progress - extraction complete, now grading
-            await emit_progress(
-                "grading",
-                f"Grading extraction results for {test_file.filename}...",
-                total_files=len(company.files),
-                current_file=file_idx,
-                current_filename=test_file.filename,
-                doc_type=test_file.doc_type,
-                files_completed=files_completed,
-                file_extraction_time=round(file_duration, 1)
-            )
-            
-            # Check if fallback prompt was used
-            if was_fallback_used():
-                fallback_used_in_test = True
-                logger.warning(f"[TEST RUN {test_id}] ⚠️ Fallback prompt was used for {test_file.filename}")
-            
-            # Handle combined extraction results (when doc_type='auto')
-            if isinstance(result, CombinedFinancialExtraction):
-                logger.info(f"[TEST RUN {test_id}] ✓ Received CombinedFinancialExtraction result")
-                logger.info(f"[TEST RUN {test_id}]   - Has Income Statement: {result.detected_types.has_income_statement}")
-                logger.info(f"[TEST RUN {test_id}]   - Has Balance Sheet: {result.detected_types.has_balance_sheet}")
-                
-                # Process each statement type that was detected
-                statements_to_process = []
-                if result.income_statement:
-                    statements_to_process.append(('income', result.income_statement))
-                if result.balance_sheet:
-                    statements_to_process.append(('balance', result.balance_sheet))
-                
-                for stmt_doc_type, stmt_result in statements_to_process:
-                    logger.info(f"[TEST RUN {test_id}] Processing {stmt_doc_type} statement from combined result...")
-                    
-                    # Get answer key for this doc type
-                    file_answer_key = None
-                    if answer_key:
-                        file_answer_key = next(
-                            (f for f in answer_key.files 
-                             if f.filename == test_file.filename and f.doc_type == stmt_doc_type),
-                            None
-                        )
-                        if file_answer_key:
-                            logger.info(f"[TEST RUN {test_id}] Found answer key for {stmt_doc_type} with {len(file_answer_key.periods)} periods")
-                    
-                    # Grade each period
-                    period_grades: List[PeriodGrade] = []
-                    
-                    if hasattr(stmt_result, 'periods'):
-                        for period_idx, period in enumerate(stmt_result.periods, 1):
-                            period_label = period.period_label
-                            period_data = period.data.model_dump()
-                            
-                            logger.info(f"[TEST RUN {test_id}]   {stmt_doc_type.upper()} Period {period_idx}: '{period_label}'")
-                            
-                            # Get expected values for this period
-                            expected = {}
-                            if file_answer_key:
-                                period_answer = find_matching_period(
-                                    extracted_label=period_label,
-                                    answer_key_periods=file_answer_key.periods,
-                                    fuzzy_match=True
-                                )
-                                if period_answer:
-                                    expected = {
-                                        k: ExpectedLineItem(**v) if isinstance(v, dict) else v
-                                        for k, v in period_answer.expected.items()
-                                    }
-                            
-                            grade = grade_period(
-                                period_label=period_label,
-                                doc_type=stmt_doc_type,
-                                extracted_data=period_data,
-                                expected=expected,
-                                default_tolerance=config.tolerance_percent
-                            )
-                            period_grades.append(grade)
-                            logger.info(f"[TEST RUN {test_id}]   ✓ Period score: {grade.score:.1f}% ({grade.grade.value})")
-                            
-                            # Accumulate stats
-                            total_periods += 1
-                            total_fields += grade.total_fields
-                            fields_correct += grade.matched_fields
-                            fields_partial += grade.partial_fields
-                            fields_wrong += grade.wrong_fields
-                            fields_missing += grade.missing_fields
-                    
-                    # Calculate file-level score for this statement type
-                    if period_grades:
-                        file_score = sum(g.score for g in period_grades) / len(period_grades)
-                    else:
-                        file_score = 0.0
-                    
-                    file_grade = FileGrade(
-                        filename=test_file.filename,
-                        doc_type=stmt_doc_type,  # Use the actual statement type, not 'auto'
-                        periods=period_grades,
-                        overall_score=file_score,
-                        overall_grade=score_to_grade(file_score)
-                    )
-                    file_results.append(file_grade)
-                    total_score += file_score
-                    total_files += 1
-                    
-                    logger.info(f"[TEST RUN {test_id}] ✓ {stmt_doc_type.upper()} processing complete: {file_score:.1f}%")
-                
-            else:
-                # Standard single doc_type result (income or balance)
-                # Get answer key for this file - match BOTH filename AND doc_type
-                # This is important because the same file can have both income and balance data
-                file_answer_key = None
-                if answer_key:
-                    file_answer_key = next(
-                        (f for f in answer_key.files 
-                         if f.filename == test_file.filename and f.doc_type == test_file.doc_type),
-                        None
-                    )
-                    if file_answer_key:
-                        logger.info(f"[TEST RUN {test_id}] Found answer key for {test_file.doc_type} with {len(file_answer_key.periods)} periods")
-                        logger.info(f"[TEST RUN {test_id}] Answer key periods: {[p.period_label for p in file_answer_key.periods]}")
-                    else:
-                        # Try fallback to filename-only match for backwards compatibility
-                        file_answer_key = next(
-                            (f for f in answer_key.files if f.filename == test_file.filename),
-                            None
-                        )
-                        if file_answer_key:
-                            logger.warning(
-                                f"[TEST RUN {test_id}] No exact doc_type match, using filename-only match "
-                                f"(file doc_type: {file_answer_key.doc_type}, test doc_type: {test_file.doc_type})"
-                            )
-                        else:
-                            logger.warning(f"[TEST RUN {test_id}] No answer key found for this file")
-                
-                # Grade each period
-                period_grades: List[PeriodGrade] = []
-                
-                logger.info(f"[TEST RUN {test_id}] Checking result structure...")
-                if hasattr(result, 'periods'):
-                    logger.info(f"[TEST RUN {test_id}] ✓ Result has multi-period structure with {len(result.periods)} periods")
-                    
-                    for period_idx, period in enumerate(result.periods, 1):
-                        period_label = period.period_label
-                        period_data = period.data.model_dump()
-                        
-                        logger.info(f"[TEST RUN {test_id}]   Period {period_idx}/{len(result.periods)}: '{period_label}'")
-                        logger.info(f"[TEST RUN {test_id}]     - Extracted fields: {len(period_data)}")
-                        
-                        # Get expected values for this period (using fuzzy matching)
-                        expected = {}
-                        if file_answer_key:
-                            period_answer = find_matching_period(
-                                extracted_label=period_label,
-                                answer_key_periods=file_answer_key.periods,
-                                fuzzy_match=True
-                            )
-                            if period_answer:
-                                expected = {
-                                    k: ExpectedLineItem(**v) if isinstance(v, dict) else v
-                                    for k, v in period_answer.expected.items()
-                                }
-                                logger.info(f"[TEST RUN {test_id}]     - Matched to answer key period: '{period_answer.period_label}'")
-                                logger.info(f"[TEST RUN {test_id}]     - Expected fields: {len(expected)}")
-                            else:
-                                logger.warning(f"[TEST RUN {test_id}]     - No expected values for period '{period_label}'")
-                        
-                        logger.info(f"[TEST RUN {test_id}]   Grading period '{period_label}'...")
-                        grade = grade_period(
-                            period_label=period_label,
-                            doc_type=test_file.doc_type,
-                            extracted_data=period_data,
-                            expected=expected,
-                            default_tolerance=config.tolerance_percent
-                        )
-                        period_grades.append(grade)
-                        logger.info(f"[TEST RUN {test_id}]   ✓ Period score: {grade.score:.1f}% ({grade.grade.value})")
-                        logger.info(f"[TEST RUN {test_id}]     - Matched: {grade.matched_fields}, Partial: {grade.partial_fields}, Wrong: {grade.wrong_fields}, Missing: {grade.missing_fields}")
-                        
-                        # Accumulate stats
-                        total_periods += 1
-                        total_fields += grade.total_fields
-                        fields_correct += grade.matched_fields
-                        fields_partial += grade.partial_fields
-                        fields_wrong += grade.wrong_fields
-                        fields_missing += grade.missing_fields
-                else:
-                    logger.warning(f"[TEST RUN {test_id}] ⚠️ Result does not have multi-period structure")
-                
-                # Calculate file-level score
-                if period_grades:
-                    file_score = sum(g.score for g in period_grades) / len(period_grades)
-                    logger.info(f"[TEST RUN {test_id}] File overall score: {file_score:.1f}%")
-                else:
-                    file_score = 0.0
-                    logger.warning(f"[TEST RUN {test_id}] No period grades - file score 0%")
-                
-                file_grade = FileGrade(
-                    filename=test_file.filename,
-                    doc_type=test_file.doc_type,
-                    periods=period_grades,
-                    overall_score=file_score,
-                    overall_grade=score_to_grade(file_score)
-                )
+            # Aggregate results from the file processing result
+            for file_grade in proc_result.file_grades:
                 file_results.append(file_grade)
-                total_score += file_score
+                total_score += file_grade.overall_score
                 total_files += 1
-                files_completed += 1
-                
-                logger.info(f"[TEST RUN {test_id}] ✓ File processing complete: {file_score:.1f}% ({file_grade.overall_grade.value})")
-                
-                # Emit progress - file complete
+            
+            total_periods += proc_result.total_periods
+            total_fields += proc_result.total_fields
+            fields_correct += proc_result.fields_correct
+            fields_partial += proc_result.fields_partial
+            fields_wrong += proc_result.fields_wrong
+            fields_missing += proc_result.fields_missing
+            
+            if proc_result.fallback_used:
+                fallback_used_in_test = True
+            
+            if proc_result.error:
+                errors.append(proc_result.error)
+            
+            files_completed += 1
+            
+            # Emit progress for completed file
+            if proc_result.file_grades:
+                avg_score = sum(fg.overall_score for fg in proc_result.file_grades) / len(proc_result.file_grades)
                 await emit_progress(
                     "file_complete",
-                    f"Completed {test_file.filename}: {file_score:.1f}%",
+                    f"Completed {proc_result.test_file.filename}: {avg_score:.1f}%",
+                    total_files=len(company.files),
+                    current_file=proc_result.file_idx,
+                    current_filename=proc_result.test_file.filename,
+                    files_completed=files_completed,
+                    file_score=round(avg_score, 1),
+                    file_grade=proc_result.file_grades[0].overall_grade.value if proc_result.file_grades else 'F'
+                )
+    
+    else:
+        # SEQUENTIAL PROCESSING: Process files one at a time (original behavior)
+        logger.info(f"[TEST RUN {test_id}] Processing {len(company.files)} files sequentially...")
+        
+        for file_idx, test_file in enumerate(company.files, 1):
+            file_path = EXAMPLE_FINANCIALS_DIR / test_file.filename
+            
+            proc_result = await _process_test_file(
+                test_id=test_id,
+                file_idx=file_idx,
+                test_file=test_file,
+                file_path=file_path,
+                config=config,
+                answer_key=answer_key,
+                total_files=len(company.files),
+                semaphore=semaphore,
+                progress_callback=progress_callback,
+                start_time=start_time
+            )
+            
+            # Aggregate results from the file processing result
+            for file_grade in proc_result.file_grades:
+                file_results.append(file_grade)
+                total_score += file_grade.overall_score
+                total_files += 1
+            
+            total_periods += proc_result.total_periods
+            total_fields += proc_result.total_fields
+            fields_correct += proc_result.fields_correct
+            fields_partial += proc_result.fields_partial
+            fields_wrong += proc_result.fields_wrong
+            fields_missing += proc_result.fields_missing
+            
+            if proc_result.fallback_used:
+                fallback_used_in_test = True
+            
+            if proc_result.error:
+                errors.append(proc_result.error)
+            
+            files_completed += 1
+            
+            # Emit progress for completed file
+            if proc_result.file_grades:
+                avg_score = sum(fg.overall_score for fg in proc_result.file_grades) / len(proc_result.file_grades)
+                await emit_progress(
+                    "file_complete",
+                    f"Completed {test_file.filename}: {avg_score:.1f}%",
                     total_files=len(company.files),
                     current_file=file_idx,
                     current_filename=test_file.filename,
                     files_completed=files_completed,
-                    file_score=round(file_score, 1),
-                    file_grade=file_grade.overall_grade.value
+                    file_score=round(avg_score, 1),
+                    file_grade=proc_result.file_grades[0].overall_grade.value if proc_result.file_grades else 'F'
                 )
-            
-        except Exception as e:
-            error_trace = traceback.format_exc()
-            logger.error(f"[TEST RUN {test_id}] ❌ Error processing {test_file.filename}:")
-            logger.error(f"[TEST RUN {test_id}] {str(e)}")
-            logger.error(f"[TEST RUN {test_id}] Traceback:\n{error_trace}")
-            errors.append(f"{test_file.filename}: {str(e)}")
-            
-            # Add failed file result
-            file_results.append(FileGrade(
-                filename=test_file.filename,
-                doc_type=test_file.doc_type,
-                periods=[],
-                overall_score=0.0,
-                overall_grade=GradeLevel.FAILING
-            ))
-            files_completed += 1
-            
-            logger.info(f"[TEST RUN {test_id}] Added failed result for {test_file.filename}")
-            
-            # Emit progress - file failed
-            await emit_progress(
-                "file_error",
-                f"Error processing {test_file.filename}: {str(e)[:100]}",
-                total_files=len(company.files),
-                current_file=file_idx,
-                current_filename=test_file.filename,
-                files_completed=files_completed,
-                error=str(e)[:200]
-            )
+            elif proc_result.error:
+                await emit_progress(
+                    "file_error",
+                    f"Error processing {test_file.filename}: {proc_result.error[:100]}",
+                    total_files=len(company.files),
+                    current_file=file_idx,
+                    current_filename=test_file.filename,
+                    files_completed=files_completed,
+                    error=proc_result.error[:200]
+                )
     
     # Calculate overall score
     logger.info(f"[TEST RUN {test_id}] " + "=" * 70)
@@ -1101,7 +1313,9 @@ async def run_test(config: TestRunConfig, progress_callback=None) -> TestRunResu
         metadata={
             "dpi": config.dpi,
             "max_pages": config.max_pages,
-            "tolerance_percent": config.tolerance_percent
+            "tolerance_percent": config.tolerance_percent,
+            "parallel": config.parallel,
+            "max_concurrent": config.max_concurrent
         }
     )
     

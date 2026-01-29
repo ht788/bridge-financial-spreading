@@ -119,6 +119,10 @@ export interface TestRunConfig {
   dpi?: number;
   max_pages?: number;
   tolerance_percent?: number;
+  /** Enable parallel file processing for faster test execution (default: true) */
+  parallel?: boolean;
+  /** Maximum number of concurrent file extractions (1-10, default: 3) */
+  max_concurrent?: number;
 }
 
 export interface TestRunResult {

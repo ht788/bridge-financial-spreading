@@ -5,6 +5,7 @@ import {
   Maximize2, Minimize2, Eye, AlertTriangle, ChevronRight
 } from 'lucide-react';
 import { PDFViewer } from '../PDFViewer';
+import { JsonViewerContainer, JsonViewer } from '../JsonViewer';
 import { API_BASE_URL } from '../../api';
 import { 
   TestRunResult, 
@@ -465,6 +466,38 @@ export const TestResultsComparison: React.FC<TestResultsComparisonProps> = ({ re
                             )}
                           </div>
                         ))}
+                        
+                        {/* JSON Data Section */}
+                        <div className="p-4 bg-gray-50/50 border-t-2 border-gray-200">
+                          <JsonViewerContainer title="Test Result Data">
+                            <JsonViewer
+                              data={selectedPeriod}
+                              title={`${selectedPeriod.period_label} - Complete Results`}
+                            />
+                            <JsonViewer
+                              data={selectedFile}
+                              title={`${selectedFile.filename} - File Results`}
+                            />
+                            <JsonViewer
+                              data={{
+                                overall_score: result.overall_score,
+                                overall_grade: result.overall_grade,
+                                model_name: result.model_name,
+                                company_name: result.company_name,
+                                execution_time_seconds: result.execution_time_seconds,
+                                total_files: result.total_files,
+                                total_periods: result.total_periods,
+                                fields_correct: result.fields_correct,
+                                fields_partial: result.fields_partial,
+                                fields_wrong: result.fields_wrong,
+                                fields_missing: result.fields_missing,
+                                metadata: result.metadata,
+                                fallback_prompt_used: result.fallback_prompt_used,
+                              }}
+                              title="Test Run Summary"
+                            />
+                          </JsonViewerContainer>
+                        </div>
                       </div>
                     </div>
                   ) : (

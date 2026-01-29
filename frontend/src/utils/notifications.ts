@@ -58,13 +58,15 @@ export function isPageVisible(): boolean {
 }
 
 /**
- * Show a notification (only if page is not visible and permission granted)
+ * Show a notification (if permission granted)
+ * Now shows notifications even when page is visible, since users want to see completion notices
  */
 export function showNotification(
   title: string,
   options?: NotificationOptions & {
     autoClose?: number;
     onClick?: () => void;
+    forceShow?: boolean; // Option to force showing even if page is visible
   }
 ): Notification | null {
   if (!isNotificationSupported()) {
@@ -77,16 +79,14 @@ export function showNotification(
     return null;
   }
 
-  // Only show notification if user is on a different tab/window
-  if (isPageVisible()) {
-    console.log('[NOTIFICATIONS] Page is visible, skipping notification');
-    return null;
-  }
+  // Show notification regardless of page visibility
+  // (Previously only showed when page was not visible, but users want to see completion notices)
+  console.log('[NOTIFICATIONS] Showing notification:', title);
 
   try {
     const notification = new Notification(title, {
-      icon: '/icon-192.png', // You can add a proper icon
-      badge: '/icon-192.png',
+      icon: '/bridge-icon.png',
+      badge: '/bridge-icon.png',
       requireInteraction: false,
       ...options,
     });

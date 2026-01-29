@@ -862,6 +862,116 @@ def validate_multi_period_consistency(
     return len(errors) == 0, errors, corrections
 
 
+# =============================================================================
+# PARALLEL POST-PROCESSING HELPERS
+# =============================================================================
+
+def _process_period_computed_totals(period_idx: int, period_data, tolerance: float) -> Tuple[int, Any, List[str]]:
+    """
+    Helper for parallel computed totals processing.
+    Returns (period_idx, modified_data, corrections) to preserve order.
+    """
+    modified_data, corrections = apply_computed_totals(period_data.data, tolerance=tolerance)
+    return period_idx, modified_data, corrections
+
+
+def _process_period_validation(period_idx: int, period_data, tolerance: float) -> Tuple[int, str, 'ValidationResult']:
+    """
+    Helper for parallel validation processing.
+    Returns (period_idx, period_label, validation_result) to preserve order.
+    """
+    validation = validate_spread(period_data.data, tolerance=tolerance)
+    return period_idx, period_data.period_label, validation
+
+
+def apply_computed_totals_parallel(
+    extracted_periods: List,
+    tolerance: float = 0.01,
+    max_workers: int = 4
+) -> None:
+    """
+    Apply computed totals to multiple periods in parallel.
+    
+    Modifies extracted_periods in place.
+    Uses ThreadPoolExecutor for parallel execution when there are 3+ periods.
+    
+    Args:
+        extracted_periods: List of period data objects with .data attribute
+        tolerance: Tolerance for validation checks
+        max_workers: Maximum number of parallel workers (default 4)
+    """
+    if len(extracted_periods) < 3:
+        # Sequential processing for small number of periods (overhead not worth it)
+        for period_data in extracted_periods:
+            original_gp = period_data.data.gross_profit.value if hasattr(period_data.data, 'gross_profit') else None
+            period_data.data, corrections = apply_computed_totals(period_data.data, tolerance=tolerance)
+            if corrections:
+                logger.info(f"[POST-PROCESS] {period_data.period_label}: {corrections}")
+        return
+    
+    # Parallel processing for 3+ periods
+    logger.info(f"[POST-PROCESS] Running computed totals in parallel for {len(extracted_periods)} periods")
+    
+    with concurrent.futures.ThreadPoolExecutor(max_workers=min(len(extracted_periods), max_workers)) as executor:
+        futures = {
+            executor.submit(_process_period_computed_totals, idx, period_data, tolerance): idx
+            for idx, period_data in enumerate(extracted_periods)
+        }
+        
+        for future in concurrent.futures.as_completed(futures):
+            try:
+                period_idx, modified_data, corrections = future.result()
+                extracted_periods[period_idx].data = modified_data
+                if corrections:
+                    logger.info(f"[POST-PROCESS] {extracted_periods[period_idx].period_label}: {corrections}")
+            except Exception as e:
+                period_idx = futures[future]
+                logger.error(f"[POST-PROCESS] Error processing period {period_idx}: {e}")
+
+
+def validate_periods_parallel(
+    extracted_periods: List,
+    tolerance: float = 0.05,
+    max_workers: int = 4
+) -> None:
+    """
+    Validate multiple periods in parallel.
+    
+    Logs validation warnings but doesn't modify data.
+    Uses ThreadPoolExecutor for parallel execution when there are 3+ periods.
+    
+    Args:
+        extracted_periods: List of period data objects with .data attribute
+        tolerance: Tolerance for validation checks
+        max_workers: Maximum number of parallel workers (default 4)
+    """
+    if len(extracted_periods) < 3:
+        # Sequential processing for small number of periods
+        for period_data in extracted_periods:
+            validation = validate_spread(period_data.data, tolerance=tolerance)
+            if not validation.is_valid:
+                logger.warning(f"[VALIDATION] {period_data.period_label}: {validation.errors}")
+        return
+    
+    # Parallel processing for 3+ periods
+    logger.info(f"[POST-PROCESS] Running validation in parallel for {len(extracted_periods)} periods")
+    
+    with concurrent.futures.ThreadPoolExecutor(max_workers=min(len(extracted_periods), max_workers)) as executor:
+        futures = {
+            executor.submit(_process_period_validation, idx, period_data, tolerance): idx
+            for idx, period_data in enumerate(extracted_periods)
+        }
+        
+        for future in concurrent.futures.as_completed(futures):
+            try:
+                period_idx, period_label, validation = future.result()
+                if not validation.is_valid:
+                    logger.warning(f"[VALIDATION] {period_label}: {validation.errors}")
+            except Exception as e:
+                period_idx = futures[future]
+                logger.error(f"[VALIDATION] Error validating period {period_idx}: {e}")
+
+
 @traceable(
     name="apply_computed_totals",
     tags=["validation", "auto-compute", "post-processing"],
@@ -2033,22 +2143,17 @@ def spread_pdf_multi_period(
         raise ValueError("LLM extraction returned no periods")
     
     # -------------------------------------------------------------------------
-    # STEP F: POST-PROCESSING (NEW - Compute Totals, Validate Consistency)
+    # STEP F: POST-PROCESSING (Compute Totals, Validate Consistency)
+    # Uses parallel processing for 3+ periods
     # -------------------------------------------------------------------------
-    logger.info("[MULTI-PERIOD] Running post-extraction processing...")
+    logger.info(f"[MULTI-PERIOD] Running post-extraction processing for {len(extracted_periods)} periods...")
     
     # F1: Apply computed totals to each period (fills in missing gross_profit, etc.)
+    # Uses parallel processing when 3+ periods exist
     if doc_type in ["income", "income_statement"]:
-        for period_data in extracted_periods:
-            original_gp = period_data.data.gross_profit.value
-            period_data.data, corrections = apply_computed_totals(
-                period_data.data, 
-                tolerance=validation_tolerance
-            )
-            if corrections:
-                logger.info(f"[POST-PROCESS] {period_data.period_label}: {corrections}")
+        apply_computed_totals_parallel(extracted_periods, tolerance=validation_tolerance)
     
-    # F2: Validate cross-period consistency
+    # F2: Validate cross-period consistency (must run after F1, needs all periods)
     is_consistent, consistency_errors, _ = validate_multi_period_consistency(
         extracted_periods, doc_type
     )
@@ -2056,12 +2161,8 @@ def spread_pdf_multi_period(
         logger.warning(f"[CONSISTENCY] Cross-period issues found: {consistency_errors}")
     
     # F3: Validate math for each period
-    for period_data in extracted_periods:
-        validation = validate_spread(period_data.data, tolerance=validation_tolerance)
-        if not validation.is_valid:
-            logger.warning(
-                f"[VALIDATION] {period_data.period_label}: {validation.errors}"
-            )
+    # Uses parallel processing when 3+ periods exist
+    validate_periods_parallel(extracted_periods, tolerance=validation_tolerance)
     
     # -------------------------------------------------------------------------
     # STEP G: Build Multi-Period Result

@@ -11,6 +11,7 @@ import {
   isCombinedExtraction 
 } from '../types';
 import { ArrowLeft, CheckCircle, AlertCircle, Layers, FileText, Wallet, Zap, AlertTriangle } from 'lucide-react';
+import { JsonViewerContainer, JsonViewer } from './JsonViewer';
 
 interface SpreadingViewProps {
   data: FinancialStatement | MultiPeriodFinancialStatement | CombinedFinancialExtraction;
@@ -259,13 +260,48 @@ export const SpreadingView: React.FC<SpreadingViewProps> = ({
 
         {/* Right Panel - Financial Table */}
         <div className="w-1/2 overflow-auto bg-gray-50">
-          <div className="p-6">
+          <div className="p-6 space-y-4">
             {displayData ? (
-              <FinancialTable 
-                data={displayData} 
-                docType={effectiveDocType} 
-                onPeriodSelect={handlePeriodSelect}
-              />
+              <>
+                <FinancialTable 
+                  data={displayData} 
+                  docType={effectiveDocType} 
+                  onPeriodSelect={handlePeriodSelect}
+                />
+                
+                {/* JSON Data Viewer - Discrete Section */}
+                <JsonViewerContainer title="Raw Extraction Data">
+                  {isCombined && combinedData ? (
+                    <>
+                      {combinedData.income_statement && (
+                        <JsonViewer
+                          data={combinedData.income_statement}
+                          title="Income Statement JSON"
+                        />
+                      )}
+                      {combinedData.balance_sheet && (
+                        <JsonViewer
+                          data={combinedData.balance_sheet}
+                          title="Balance Sheet JSON"
+                        />
+                      )}
+                      <JsonViewer
+                        data={combinedData.detected_types}
+                        title="Statement Detection JSON"
+                      />
+                    </>
+                  ) : (
+                    <JsonViewer
+                      data={data}
+                      title={`${metadata.original_filename} - Full Response`}
+                    />
+                  )}
+                  <JsonViewer
+                    data={metadata}
+                    title="Extraction Metadata"
+                  />
+                </JsonViewerContainer>
+              </>
             ) : (
               <div className="text-center text-gray-500 py-8">
                 No data available for this statement type

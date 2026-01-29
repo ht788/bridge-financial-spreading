@@ -1,5 +1,5 @@
 import React from 'react';
-import { Building2, Cpu, FileText, Settings2, ChevronDown } from 'lucide-react';
+import { Building2, Cpu, FileText, Settings2, ChevronDown, Zap } from 'lucide-react';
 import { 
   TestCompany, 
   AvailableModel,
@@ -12,10 +12,14 @@ interface TestConfigPanelProps {
   selectedModel?: AvailableModel;
   promptContent?: string;
   extendedThinking: boolean;
+  parallel: boolean;
+  maxConcurrent: number;
   onSelectCompany: (company: TestCompany) => void;
   onSelectModel: (model: AvailableModel) => void;
   onPromptChange: (content: string) => void;
   onExtendedThinkingChange: (enabled: boolean) => void;
+  onParallelChange: (enabled: boolean) => void;
+  onMaxConcurrentChange: (value: number) => void;
   onRunTest: () => void;
   isRunning: boolean;
 }
@@ -27,10 +31,14 @@ export const TestConfigPanel: React.FC<TestConfigPanelProps> = ({
   selectedModel,
   promptContent,
   extendedThinking,
+  parallel,
+  maxConcurrent,
   onSelectCompany,
   onSelectModel,
   onPromptChange,
   onExtendedThinkingChange,
+  onParallelChange,
+  onMaxConcurrentChange,
   onRunTest,
   isRunning
 }) => {
@@ -148,6 +156,65 @@ export const TestConfigPanel: React.FC<TestConfigPanelProps> = ({
             </label>
           </div>
         )}
+
+        {/* Parallel Processing Controls */}
+        <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 space-y-4">
+          <label className="flex items-center justify-between cursor-pointer">
+            <div className="flex items-center gap-3">
+              <div className="flex-shrink-0">
+                <div className={`w-12 h-6 rounded-full transition-colors ${
+                  parallel ? 'bg-amber-600' : 'bg-gray-300'
+                }`}>
+                  <div className={`w-5 h-5 bg-white rounded-full shadow-sm transition-transform transform ${
+                    parallel ? 'translate-x-6' : 'translate-x-0.5'
+                  } mt-0.5`} />
+                </div>
+              </div>
+              <div>
+                <div className="font-medium text-gray-900 flex items-center gap-2">
+                  <Zap className="w-4 h-4 text-amber-600" />
+                  Parallel Processing
+                </div>
+                <div className="text-sm text-gray-600">
+                  Process multiple files simultaneously for faster test execution
+                </div>
+              </div>
+            </div>
+            <input
+              type="checkbox"
+              checked={parallel}
+              onChange={(e) => onParallelChange(e.target.checked)}
+              className="sr-only"
+            />
+          </label>
+          
+          {/* Max Concurrent Slider - only shown when parallel is enabled */}
+          {parallel && (
+            <div className="pt-2 border-t border-amber-200">
+              <div className="flex items-center justify-between mb-2">
+                <label className="text-sm font-medium text-gray-700">
+                  Max Concurrent Files
+                </label>
+                <span className="text-sm font-semibold text-amber-700 bg-amber-100 px-2 py-0.5 rounded">
+                  {maxConcurrent}
+                </span>
+              </div>
+              <input
+                type="range"
+                min="1"
+                max="6"
+                value={maxConcurrent}
+                onChange={(e) => onMaxConcurrentChange(parseInt(e.target.value))}
+                className="w-full h-2 bg-amber-200 rounded-lg appearance-none cursor-pointer accent-amber-600"
+              />
+              <div className="flex justify-between text-xs text-gray-500 mt-1">
+                <span>1 (Safe)</span>
+                <span>3 (Default)</span>
+                <span>6 (Fast)</span>
+              </div>
+            </div>
+          )}
+        </div>
 
         {/* Prompt Editor Toggle */}
         <div>

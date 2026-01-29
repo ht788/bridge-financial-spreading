@@ -13,6 +13,14 @@ from pydantic import BaseModel, Field
 from enum import Enum
 
 
+class TestRunStatus(str, Enum):
+    """Test run execution status"""
+    PENDING = "pending"       # Test has been created but not started
+    RUNNING = "running"       # Test is currently executing
+    COMPLETE = "complete"     # Test finished successfully
+    ERROR = "error"           # Test failed with error
+
+
 class GradeLevel(str, Enum):
     """Grade classification levels"""
     PERFECT = "A+"      # 95-100%
@@ -203,9 +211,15 @@ class TestRunResult(BaseModel):
     prompt_version: Optional[str] = None
     prompt_content: Optional[str] = None
     
+    # Execution status
+    status: TestRunStatus = Field(
+        default=TestRunStatus.PENDING,
+        description="Current status of the test run"
+    )
+    
     # Overall results
-    overall_score: float = Field(ge=0.0, le=100.0)
-    overall_grade: GradeLevel
+    overall_score: float = Field(ge=0.0, le=100.0, default=0.0)
+    overall_grade: GradeLevel = Field(default=GradeLevel.FAILING)
     
     # Per-file results
     file_results: List[FileGrade] = Field(default_factory=list)
