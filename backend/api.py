@@ -1289,19 +1289,38 @@ async def get_prompt_content(doc_type: str):
 FRONTEND_DIST = Path(__file__).resolve().parent.parent / "frontend" / "dist"
 if FRONTEND_DIST.exists():
     logger.info(f"Serving frontend from: {FRONTEND_DIST}")
+    
+    # Mount static assets BEFORE defining catch-all routes
     app.mount("/assets", StaticFiles(directory=FRONTEND_DIST / "assets"), name="assets")
     
-    @app.get("/")
-    async def serve_frontend():
-        """Serve the frontend index.html"""
-        return FileResponse(FRONTEND_DIST / "index.html")
+    # Serve specific files
+    @app.get("/favicon.ico")
+    async def serve_favicon():
+        """Serve favicon"""
+        favicon_path = FRONTEND_DIST / "favicon.ico"
+        if favicon_path.exists():
+            return FileResponse(favicon_path)
+        raise HTTPException(status_code=404, detail="Favicon not found")
     
+    @app.get("/vite.svg")
+    async def serve_vite_svg():
+        """Serve vite.svg"""
+        vite_svg_path = FRONTEND_DIST / "vite.svg"
+        if vite_svg_path.exists():
+            return FileResponse(vite_svg_path)
+        raise HTTPException(status_code=404, detail="Vite SVG not found")
+    
+    # Catch-all route for frontend SPA routing (MUST BE LAST)
     @app.get("/{full_path:path}")
     async def serve_frontend_routes(full_path: str):
         """Catch-all route for frontend SPA routing"""
-        # Don't catch API routes or WebSocket routes
-        if full_path.startswith("api/") or full_path.startswith("ws/"):
+        # Skip API and WebSocket routes (they're already registered above)
+        if full_path.startswith("api") or full_path.startswith("ws"):
             raise HTTPException(status_code=404, detail="Not found")
+        
+        # Root path
+        if full_path == "" or full_path == "/":
+            return FileResponse(FRONTEND_DIST / "index.html")
         
         # Check if file exists in dist folder
         file_path = FRONTEND_DIST / full_path
@@ -1312,6 +1331,15 @@ if FRONTEND_DIST.exists():
         return FileResponse(FRONTEND_DIST / "index.html")
 else:
     logger.info("Frontend dist folder not found - API only mode")
+    
+    @app.get("/")
+    async def root():
+        """Root endpoint when frontend is not built"""
+        return {
+            "message": "Bridge Financial Spreader API",
+            "docs": "/docs",
+            "health": "/api/health"
+        }
 
 
 # =============================================================================
