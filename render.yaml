@@ -3,13 +3,11 @@ services:
   - type: web
     name: bridge-financial-spreader
     env: python
+    runtime: python-3.11.0
     region: oregon
     plan: starter
     branch: master
-    buildCommand: |
-      pip install -r requirements.txt
-      pip install -r backend/requirements.txt
-      cd frontend && npm install && npm run build && cd ..
+    buildCommand: bash build.sh
     startCommand: python backend/main.py
     envVars:
       - key: ANTHROPIC_API_KEY
@@ -22,8 +20,4 @@ services:
         value: financial-spreader-production
       - key: API_HOST
         value: 0.0.0.0
-      - key: API_PORT
-        value: 10000
-      - key: PYTHON_VERSION
-        value: 3.11.0
     healthCheckPath: /api/health
