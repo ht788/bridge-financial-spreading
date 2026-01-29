@@ -250,6 +250,18 @@ class TestRunConfig(BaseModel):
     dpi: int = Field(default=150, description="PDF conversion DPI (optimized for speed while preserving number readability)")
     max_pages: Optional[int] = Field(default=None, description="Max pages per file")
     tolerance_percent: float = Field(default=5.0, description="Default tolerance for comparisons")
+    
+    # Parallel processing configuration
+    parallel: bool = Field(
+        default=True,
+        description="Enable parallel file processing for faster test execution"
+    )
+    max_concurrent: int = Field(
+        default=3,
+        ge=1,
+        le=10,
+        description="Maximum number of concurrent file extractions (1-10, default 3)"
+    )
 
 
 class TestRunSummary(BaseModel):
