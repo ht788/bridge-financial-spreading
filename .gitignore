@@ -86,7 +86,10 @@ results/
 # Sample/test PDFs (may contain sensitive financial data)
 samples/
 test_data/
+
+# PDFs in general are ignored, but allow example_financials for testing
 *.pdf
+!example_financials/**/*.pdf
 
 # Temporary files
 tmp/
