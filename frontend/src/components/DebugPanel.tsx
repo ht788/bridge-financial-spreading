@@ -17,7 +17,8 @@ import {
   XCircle,
   Loader2,
   Copy,
-  Check
+  Check,
+  type LucideIcon
 } from 'lucide-react';
 import clsx from 'clsx';
 import { LogEntry, LogLevel, ProcessingStep } from '../types';
@@ -256,7 +257,10 @@ export const DebugPanel: React.FC<DebugPanelProps> = ({
 // =============================================================================
 
 const StepBadge: React.FC<{ step: ProcessingStep }> = ({ step }) => {
-  const statusConfig = {
+  const statusConfig: Record<
+    ProcessingStep['status'],
+    { icon: LucideIcon; color: string; animate?: boolean }
+  > = {
     pending: { icon: Clock, color: 'text-slate-400 bg-slate-700' },
     running: { icon: Loader2, color: 'text-blue-400 bg-blue-500/20', animate: true },
     completed: { icon: CheckCircle, color: 'text-emerald-400 bg-emerald-500/20' },

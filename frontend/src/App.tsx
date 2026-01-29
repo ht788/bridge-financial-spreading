@@ -3,7 +3,7 @@ import { Header } from './components/Header';
 import { UploadPage } from './components/UploadPage';
 import { SpreadingView } from './components/SpreadingView';
 import { DebugPanel } from './components/DebugPanel';
-import { TestingPage } from './components/testing/TestingPage';
+import { TestingPage, AnswerKeyEditorPage } from './components/testing';
 import { api } from './api';
 import { connectionManager, ConnectionStatus, WebSocketMessage as CMWebSocketMessage } from './utils/connectionManager';
 import { 
@@ -44,7 +44,7 @@ type AppState =
   | { status: 'success'; mode: 'batch'; data: BatchResultItem[]; selectedIndex: number }
   | { status: 'error'; error: string };
 
-type PageType = 'home' | 'testing';
+type PageType = 'home' | 'testing' | 'answer-keys';
 
 function App() {
   const [currentPage, setCurrentPage] = useState<PageType>('home');
@@ -336,17 +336,27 @@ function App() {
     setCurrentPage('home');
   };
 
+  const handleNavigateToAnswerKeys = () => {
+    setCurrentPage('answer-keys');
+  };
+
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-50 via-white to-emerald-50/30">
       <Header 
         onNavigateToTesting={handleNavigateToTesting}
         onNavigateToHome={handleNavigateToHome}
+        onNavigateToAnswerKeys={handleNavigateToAnswerKeys}
         currentPage={currentPage}
       />
 
       {/* Testing Page */}
       {currentPage === 'testing' && (
         <TestingPage onBack={handleNavigateToHome} />
+      )}
+
+      {/* Answer Key Editor Page */}
+      {currentPage === 'answer-keys' && (
+        <AnswerKeyEditorPage onBack={handleNavigateToTesting} />
       )}
 
       {/* Home Page Content */}
@@ -637,6 +647,9 @@ const aggregateBatchResults = (results: BatchResultItem[], docType: 'income' | '
 
   validResults.forEach(r => {
     const data = r.result!.data;
+    if (!data) {
+      return;
+    }
     const metadata = r.result!.metadata;
     
     // Handle CombinedFinancialExtraction (auto-detect)

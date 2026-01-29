@@ -41,7 +41,7 @@ export const TestingPage: React.FC<TestingPageProps> = ({ onBack }) => {
   const initialLoadAttempted = useRef(false);
   const isMounted = useRef(true);
   const messageUnsubscribeRef = useRef<(() => void) | null>(null);
-  const historyRefreshInterval = useRef<NodeJS.Timeout | null>(null);
+  const historyRefreshInterval = useRef<ReturnType<typeof setInterval> | null>(null);
 
   // Subscribe to connection status (connection manager is already started by App.tsx)
   useEffect(() => {

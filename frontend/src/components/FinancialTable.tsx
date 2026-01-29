@@ -23,12 +23,13 @@ const hasBreakdown = (lineItem: LineItem | undefined): boolean => {
 
 // Helper to get all unique breakdown labels across periods
 const getBreakdownLabels = (
-  periods: Array<{ data: Record<string, LineItem> }>,
+  periods: Array<{ data: IncomeStatement | BalanceSheet | Record<string, LineItem> }>,
   fieldName: string
 ): string[] => {
   const labelsSet = new Set<string>();
   periods.forEach(period => {
-    const lineItem = period.data[fieldName as keyof typeof period.data] as LineItem;
+    const data = period.data as Record<string, LineItem>;
+    const lineItem = data[fieldName];
     if (lineItem?.breakdown) {
       lineItem.breakdown.forEach(item => labelsSet.add(item.label));
     }
@@ -213,7 +214,7 @@ const MultiPeriodIncomeStatementTable: React.FC<MultiPeriodIncomeTableProps> = (
                 });
                 const isExpanded = expandedRows.has(fieldName);
                 const breakdownLabels = rowHasBreakdown 
-                  ? getBreakdownLabels(periods as Array<{ data: Record<string, LineItem> }>, fieldName)
+                  ? getBreakdownLabels(periods, fieldName)
                   : [];
 
                 return (
@@ -471,7 +472,7 @@ const MultiPeriodBalanceSheetTable: React.FC<MultiPeriodBalanceTableProps> = ({ 
                 });
                 const isExpanded = expandedRows.has(fieldName);
                 const breakdownLabels = rowHasBreakdown 
-                  ? getBreakdownLabels(periods as Array<{ data: Record<string, LineItem> }>, fieldName)
+                  ? getBreakdownLabels(periods, fieldName)
                   : [];
 
                 return (
