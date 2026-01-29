@@ -12,6 +12,7 @@ import {
   TestRunSummary,
 } from '../../testingTypes';
 import { connectionManager, ConnectionStatus } from '../../utils/connectionManager';
+import { notifyTestComplete, notifyError } from '../../utils/notifications';
 
 interface TestingPageProps {
   onBack: () => void;
@@ -280,6 +281,14 @@ export const TestingPage: React.FC<TestingPageProps> = ({ onBack }) => {
       setCurrentResult(result);
       setStatus('complete');
       
+      // Show completion notification
+      notifyTestComplete(
+        selectedCompany.name,
+        result.overall_score,
+        result.overall_grade,
+        result.execution_time_seconds
+      );
+      
       // Disconnect WebSocket after a short delay to show final progress
       setTimeout(() => {
         disconnectWebSocket();
@@ -312,6 +321,9 @@ export const TestingPage: React.FC<TestingPageProps> = ({ onBack }) => {
       
       setError(errorMessage);
       setStatus('error');
+      
+      // Show error notification
+      notifyError('Test Run Failed', errorMessage);
       
       // Disconnect WebSocket on error
       disconnectWebSocket();

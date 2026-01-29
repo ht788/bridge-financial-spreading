@@ -22,6 +22,7 @@ import {
 } from './types';
 import { UploadOptions } from './components/UploadPage';
 import { AlertCircle, CheckCircle, XCircle, ArrowLeft, RefreshCw, Wifi, WifiOff, Layers, FileText, Loader2 } from 'lucide-react';
+import { notifySpreadComplete, notifyBatchComplete, notifyError, requestNotificationPermission } from './utils/notifications';
 
 interface SingleResult {
   result: SpreadResponse;
@@ -55,6 +56,7 @@ function App() {
   const [isReconnecting, setIsReconnecting] = useState(false);
   const logIdCounter = useRef(0);
   const lastConnectionState = useRef<string | null>(null);
+  const processingStartTime = useRef<number>(0);
 
   // Connect to backend on mount using unified connection manager
   useEffect(() => {
@@ -162,6 +164,9 @@ function App() {
     // Clear previous steps
     setSteps([]);
     
+    // Record start time for notifications
+    processingStartTime.current = Date.now();
+    
     // Pause health checks during processing to avoid misleading "Backend unavailable" messages
     // The backend may be slow to respond to health checks while processing large PDFs
     connectionManager.pauseHealthChecks();
@@ -196,13 +201,24 @@ function App() {
             mode: 'single',
             data: { result, docType: file.docType }
           });
+          
+          // Show notification
+          notifySpreadComplete(
+            file.file.name,
+            result.metadata.extraction_rate || 0,
+            file.docType
+          );
         } else {
-          addLocalLog('error', result.error || 'Unknown error occurred');
+          const errorMsg = result.error || 'Unknown error occurred';
+          addLocalLog('error', errorMsg);
           setState({ 
             status: 'error', 
-            error: result.error || 'Unknown error occurred' 
+            error: errorMsg
           });
           setDebugOpen(true);
+          
+          // Show error notification
+          notifyError('Spreading Failed', errorMsg);
         }
       } else {
         // Batch processing
@@ -246,13 +262,25 @@ function App() {
             data: results,
             selectedIndex: firstSuccessIdx >= 0 ? firstSuccessIdx : 0
           });
+          
+          // Show batch completion notification
+          const executionTime = (Date.now() - processingStartTime.current) / 1000;
+          notifyBatchComplete(
+            batchResult.total_files,
+            batchResult.completed,
+            executionTime
+          );
         } else {
+          const errorMsg = 'All files failed to process. Check the debug panel for details.';
           addLocalLog('error', 'All files failed to process');
           setState({ 
             status: 'error', 
-            error: 'All files failed to process. Check the debug panel for details.' 
+            error: errorMsg
           });
           setDebugOpen(true);
+          
+          // Show error notification
+          notifyError('Batch Processing Failed', errorMsg);
         }
       }
     } catch (error: any) {
@@ -267,6 +295,9 @@ function App() {
         error: errorMessage
       });
       setDebugOpen(true);
+      
+      // Show error notification
+      notifyError('Processing Error', errorMessage);
     } finally {
       // Resume health checks now that processing is complete
       connectionManager.resumeHealthChecks();
