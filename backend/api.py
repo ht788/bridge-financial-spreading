@@ -1270,6 +1270,39 @@ async def get_prompt_content(doc_type: str):
 
 
 # =============================================================================
+# STATIC FILES (Production Mode)
+# =============================================================================
+
+# Serve frontend static files in production
+FRONTEND_DIST = Path(__file__).resolve().parent.parent / "frontend" / "dist"
+if FRONTEND_DIST.exists():
+    logger.info(f"Serving frontend from: {FRONTEND_DIST}")
+    app.mount("/assets", StaticFiles(directory=FRONTEND_DIST / "assets"), name="assets")
+    
+    @app.get("/")
+    async def serve_frontend():
+        """Serve the frontend index.html"""
+        return FileResponse(FRONTEND_DIST / "index.html")
+    
+    @app.get("/{full_path:path}")
+    async def serve_frontend_routes(full_path: str):
+        """Catch-all route for frontend SPA routing"""
+        # Don't catch API routes or WebSocket routes
+        if full_path.startswith("api/") or full_path.startswith("ws/"):
+            raise HTTPException(status_code=404, detail="Not found")
+        
+        # Check if file exists in dist folder
+        file_path = FRONTEND_DIST / full_path
+        if file_path.exists() and file_path.is_file():
+            return FileResponse(file_path)
+        
+        # Otherwise serve index.html for client-side routing
+        return FileResponse(FRONTEND_DIST / "index.html")
+else:
+    logger.info("Frontend dist folder not found - API only mode")
+
+
+# =============================================================================
 # STARTUP/SHUTDOWN EVENTS
 # =============================================================================
 
@@ -1280,8 +1313,8 @@ async def startup_event():
     logger.info(f"Upload directory: {UPLOAD_DIR}")
     
     # Check environment variables
-    if not os.getenv("OPENAI_API_KEY"):
-        logger.warning("OPENAI_API_KEY not set - spreading will fail!")
+    if not os.getenv("OPENAI_API_KEY") and not os.getenv("ANTHROPIC_API_KEY"):
+        logger.warning("No AI API keys set - spreading will fail!")
     
     if not os.getenv("LANGSMITH_API_KEY"):
         logger.warning("LANGSMITH_API_KEY not set - no tracing available")

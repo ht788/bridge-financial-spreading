@@ -8,6 +8,8 @@ pnpm-debug.log*
 lerna-debug.log*
 
 node_modules
+# Note: dist is built on Render, so we keep it in gitignore for local dev
+# but it will be created during deployment
 dist
 dist-ssr
 *.local

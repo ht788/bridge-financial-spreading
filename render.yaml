@@ -1,0 +1,29 @@
+services:
+  # Backend API (serves both API and frontend static files)
+  - type: web
+    name: bridge-financial-spreader
+    env: python
+    region: oregon
+    plan: starter
+    branch: master
+    buildCommand: |
+      pip install -r requirements.txt
+      pip install -r backend/requirements.txt
+      cd frontend && npm install && npm run build && cd ..
+    startCommand: python backend/main.py
+    envVars:
+      - key: ANTHROPIC_API_KEY
+        sync: false
+      - key: OPENAI_API_KEY
+        sync: false
+      - key: LANGSMITH_API_KEY
+        sync: false
+      - key: LANGSMITH_PROJECT
+        value: financial-spreader-production
+      - key: API_HOST
+        value: 0.0.0.0
+      - key: API_PORT
+        value: 10000
+      - key: PYTHON_VERSION
+        value: 3.11.0
+    healthCheckPath: /api/health

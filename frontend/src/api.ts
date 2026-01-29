@@ -147,9 +147,14 @@ export const api = {
   },
 
   /**
-   * Start the backend server
+   * Start the backend server (development only)
    */
   async startBackend(): Promise<{ success: boolean; message: string }> {
+    // Only works in development with the startup service
+    if (window.location.hostname !== 'localhost' && window.location.hostname !== '127.0.0.1') {
+      return { success: false, message: 'Backend management not available in production' };
+    }
+    
     // Call the startup service on port 8001
     const response = await fetch('http://localhost:8001/start', {
       method: 'POST',
@@ -161,9 +166,14 @@ export const api = {
   },
 
   /**
-   * Force restart the backend server
+   * Force restart the backend server (development only)
    */
   async restartBackend(): Promise<{ success: boolean; message: string }> {
+    // Only works in development with the startup service
+    if (window.location.hostname !== 'localhost' && window.location.hostname !== '127.0.0.1') {
+      return { success: false, message: 'Backend management not available in production' };
+    }
+    
     // Call the startup service on port 8001
     const response = await fetch('http://localhost:8001/restart', {
       method: 'POST',

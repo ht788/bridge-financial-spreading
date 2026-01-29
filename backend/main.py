@@ -20,8 +20,9 @@ def main():
     """Start the FastAPI server with uvicorn"""
     
     # Configuration
+    # Render.com sets PORT environment variable, use it if available
     host = os.getenv("API_HOST", "0.0.0.0")
-    port = int(os.getenv("API_PORT", "8000"))
+    port = int(os.getenv("PORT") or os.getenv("API_PORT", "8000"))
     reload = False  # Reload doesn't work when passing app object directly
     
     print("="*60)
