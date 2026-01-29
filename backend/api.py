@@ -834,10 +834,12 @@ async def get_file(filename: str):
     )
 
 
-@app.get("/api/testing/files/{filename}")
+@app.get("/api/testing/files/{filename:path}")
 async def get_test_file(filename: str):
     """
     Serve example financial files for testing.
+    
+    Supports nested paths like 'Luminex/file.pdf' to match directory structure.
     """
     file_path = EXAMPLE_FINANCIALS_DIR / filename
     
@@ -847,10 +849,19 @@ async def get_test_file(filename: str):
         if not file_path.exists():
              raise HTTPException(status_code=404, detail="File not found")
     
+    # Determine media type based on file extension
+    if filename.lower().endswith('.xlsx') or filename.lower().endswith('.xls'):
+        media_type = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+    else:
+        media_type = "application/pdf"
+    
+    # Extract just the filename without directory for the response
+    response_filename = Path(filename).name
+    
     return FileResponse(
         file_path,
-        media_type="application/pdf",
-        filename=filename
+        media_type=media_type,
+        filename=response_filename
     )
 
 

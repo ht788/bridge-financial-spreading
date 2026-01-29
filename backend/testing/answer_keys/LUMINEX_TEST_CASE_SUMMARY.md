@@ -4,33 +4,47 @@
 
 **Company:** Candle-Lite (Luminex)  
 **Test ID:** `luminex`  
-**Document Types:** Income Statement (multi-period) + Balance Sheet  
-**File Format:** Excel (.xlsx)  
-**Periods Covered:** 
-- Income Statement: FY2023, FY2024, FY2025
-- Balance Sheet: FY2025 only
+**Document Types:** Income Statement + Balance Sheet  
+**File Formats:** PDF (audited financials) + Excel (interim)  
+**Periods Covered:** FY2022 through FY2026 YTD
 
 ## Test Files
 
-Both statements are in the same Excel file with different sheets:
+The Luminex test case includes both annual audited PDFs and interim Excel reports:
 
-1. **Income Statement**
-   - **Filename:** `Luminex/2025-11-30 Candle-Lite Interim Financial Statements.xlsx`
-   - **Sheet:** "FY26 P&L Actuals"
-   - **Periods:** FY2023, FY2024, FY2025 (3 comparative fiscal years)
-   
-2. **Balance Sheet**
-   - **Filename:** `Luminex/2025-11-30 Candle-Lite Interim Financial Statements.xlsx`
-   - **Sheet:** "Sch 6 - FY26 BS Actuals"
-   - **Period:** FY2025 fiscal year-end (Feb 28, 2025)
+### Annual Audited Financial Statements (PDFs)
 
-- **Location:** `example_financials/Luminex/`
+1. **Luminex 2023 FS - FINAL.pdf**
+   - **Income Statement:** FY2023 + FY2022 (comparative)
+   - **Balance Sheet:** FY2023 + FY2022 (comparative)
+
+2. **Luminex 2024 FS FINAL.pdf**
+   - **Income Statement:** FY2024 + FY2023 (comparative)
+   - **Balance Sheet:** FY2024 + FY2023 (comparative)
+
+3. **Luminex 2025 FS v2 6.24.pdf**
+   - **Income Statement:** FY2025 + FY2024 (comparative)
+   - **Balance Sheet:** FY2025 + FY2024 (comparative)
+
+### Interim Financial Statements (Excel)
+
+4. **2025-11-30 Candle-Lite Interim Financial Statements.xlsx**
+   - **Income Statement:** FY2026 YTD (through Nov 30, 2025)
+   - **Balance Sheet:** FY2026 YTD (as of Nov 30, 2025)
+
+**Location:** `example_financials/Luminex/`
 
 ## Answer Key Structure
 
-The answer key for Luminex (`luminex_answer_key.json`) contains:
-- **File 1:** Income statement with 3 fiscal periods
-- **File 2:** Balance sheet with 1 period (FY2025)
+The answer key (`luminex_answer_key.json`) contains **8 file entries** with comparative periods:
+- **File 1:** 2023 PDF Income - FY2023 + FY2022
+- **File 2:** 2023 PDF Balance - FY2023 + FY2022
+- **File 3:** 2024 PDF Income - FY2024 + FY2023
+- **File 4:** 2024 PDF Balance - FY2024 + FY2023
+- **File 5:** 2025 PDF Income - FY2025 + FY2024
+- **File 6:** 2025 PDF Balance - FY2025 + FY2024
+- **File 7:** Excel Income - FY2026 YTD
+- **File 8:** Excel Balance - FY2026 YTD
 
 ### FY2025 (Period ending 2025-02-28)
 
@@ -80,23 +94,23 @@ The answer key for Luminex (`luminex_answer_key.json`) contains:
 | Income Tax Expense | $904 | |
 | Net Income | ($32,723) | Net loss |
 
-### Balance Sheet - FY2025 (As of 2025-02-28)
+### Balance Sheet - FY2025 (As of Feb 28, 2025 from 2025 PDF)
 
 | Field | Value | Notes |
 |-------|--------|-------|
-| Cash & Equivalents | $1,398 | Cash |
-| Accounts Receivable | $10,549 | Net of allowances |
-| Inventory | $41,816 | Net of reserves |
-| Total Current Assets | $57,753 | |
-| Net PP&E | $16,544 | Including ROU assets |
-| Goodwill & Intangibles | $928 | Intangible assets |
-| Total Assets | $89,535 | |
-| Accounts Payable | $19,252 | Trade payables |
-| Total Current Liabilities | $28,399 | |
-| Long-term Debt | $84,913 | Various debt facilities |
-| Total Liabilities | $127,887 | |
-| Total Shareholders' Equity | ($38,352) | Negative equity |
-| Total Liabilities & Equity | $89,535 | Balanced |
+| Cash & Equivalents | $6,001 | Cash and cash equivalents |
+| Accounts Receivable | $13,636 | Net of allowances |
+| Inventory | $55,731 | Net of reserves |
+| Total Current Assets | $84,087 | |
+| Net PP&E | $19,889 | Property, plant and equipment |
+| Goodwill & Intangibles | $3,075 | Intangible assets |
+| Total Assets | $127,204 | |
+| Accounts Payable | $27,238 | Trade + common control |
+| Total Current Liabilities | $100,538 | Includes $49,963 current debt |
+| Long-term Debt | $1,062 | Net of current portion |
+| Total Liabilities | $156,921 | |
+| Total Shareholders' Deficit | ($29,717) | Negative equity |
+| Total Liabilities & Equity | $127,204 | Balanced |
 
 ## Key Characteristics
 

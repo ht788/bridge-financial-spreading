@@ -563,13 +563,77 @@ interface BatchResultsViewProps {
   onBack: () => void;
 }
 
+/**
+ * Generate a unique key for a period based on label and end_date.
+ * This normalizes period identifiers to detect duplicates.
+ */
+const getPeriodKey = (period: any): string => {
+  // Prefer end_date if available (most reliable)
+  if (period.end_date) {
+    return period.end_date;
+  }
+  // Fall back to period_label, normalized
+  const label = (period.period_label || '').toString().toLowerCase().trim();
+  // Extract year from labels like "FY24", "FY2024", "2024", "Year Ended 2024"
+  const yearMatch = label.match(/(?:fy)?(\d{2,4})/);
+  if (yearMatch) {
+    const year = yearMatch[1].length === 2 ? `20${yearMatch[1]}` : yearMatch[1];
+    return year;
+  }
+  return label;
+};
+
+/**
+ * Determine if a period is "primary" for its source file.
+ * Primary periods should be preferred over comparative periods from other files.
+ * e.g., FY24 from "2024 FS.pdf" is primary, FY24 from "2025 FS.pdf" is comparative.
+ */
+const isPrimaryPeriod = (period: any, filename: string): boolean => {
+  if (!filename) return true;
+  
+  // Extract years from filename (e.g., "Luminex 2024 FS" -> "2024")
+  const filenameYears = filename.match(/20\d{2}/g) || [];
+  if (filenameYears.length === 0) return true; // Can't determine, assume primary
+  
+  // Get the most recent year from filename (likely the primary year)
+  const primaryYear = Math.max(...filenameYears.map(y => parseInt(y))).toString();
+  
+  // Check if period matches the primary year
+  const periodKey = getPeriodKey(period);
+  const periodYear = periodKey.match(/20\d{2}/)?.[0] || periodKey.slice(-4);
+  
+  return periodYear === primaryYear;
+};
+
+/**
+ * Aggregate batch results into a single multi-period view, with deduplication.
+ * When the same period appears in multiple files (e.g., FY24 in both 2025 and 2024 financials),
+ * prefer the "primary" version from its native file.
+ */
 const aggregateBatchResults = (results: BatchResultItem[], docType: 'income' | 'balance') => {
   const validResults = results.filter(r => r.success && r.result?.data);
   if (validResults.length === 0) return null;
 
-  const periods: any[] = [];
+  // Use a Map for deduplication: key -> { period, isPrimary, filename }
+  const periodMap = new Map<string, { period: any; isPrimary: boolean; filename: string }>();
   let currency = 'USD';
   let scale = 'units';
+
+  const addPeriodWithDedup = (period: any, pdfUrl: string, filename: string) => {
+    const key = getPeriodKey(period);
+    const isPrimary = isPrimaryPeriod(period, filename);
+    const enrichedPeriod = { ...period, pdf_url: pdfUrl, original_filename: filename };
+    
+    const existing = periodMap.get(key);
+    if (!existing) {
+      // First occurrence
+      periodMap.set(key, { period: enrichedPeriod, isPrimary, filename });
+    } else if (isPrimary && !existing.isPrimary) {
+      // New period is primary, existing is comparative - replace
+      periodMap.set(key, { period: enrichedPeriod, isPrimary, filename });
+    }
+    // Otherwise keep existing (either both primary, both comparative, or existing is primary)
+  };
 
   validResults.forEach(r => {
     const data = r.result!.data;
@@ -580,13 +644,13 @@ const aggregateBatchResults = (results: BatchResultItem[], docType: 'income' | '
        const combined = data as CombinedFinancialExtraction;
        if (docType === 'income' && combined.income_statement) {
          combined.income_statement.periods.forEach(p => {
-           periods.push({ ...p, pdf_url: metadata.pdf_url, original_filename: r.filename });
+           addPeriodWithDedup(p, metadata.pdf_url, r.filename);
          });
          if (combined.income_statement.currency) currency = combined.income_statement.currency;
          if (combined.income_statement.scale) scale = combined.income_statement.scale;
        } else if (docType === 'balance' && combined.balance_sheet) {
          combined.balance_sheet.periods.forEach(p => {
-           periods.push({ ...p, pdf_url: metadata.pdf_url, original_filename: r.filename });
+           addPeriodWithDedup(p, metadata.pdf_url, r.filename);
          });
          if (combined.balance_sheet.currency) currency = combined.balance_sheet.currency;
          if (combined.balance_sheet.scale) scale = combined.balance_sheet.scale;
@@ -598,7 +662,7 @@ const aggregateBatchResults = (results: BatchResultItem[], docType: 'income' | '
        const isIncome = 'revenue' in (data.periods[0] as any).data;
        if ((docType === 'income' && isIncome) || (docType === 'balance' && !isIncome)) {
           data.periods.forEach(p => {
-            periods.push({ ...p, pdf_url: metadata.pdf_url, original_filename: r.filename });
+            addPeriodWithDedup(p, metadata.pdf_url, r.filename);
           });
           if (data.currency) currency = data.currency;
           if (data.scale) scale = data.scale;
@@ -610,18 +674,27 @@ const aggregateBatchResults = (results: BatchResultItem[], docType: 'income' | '
        const isIncome = 'revenue' in singleData;
        
        if ((docType === 'income' && isIncome) || (docType === 'balance' && !isIncome)) {
-          periods.push({
+          const singlePeriod = {
             period_label: (singleData as any).fiscal_period || (singleData as any).as_of_date || r.filename,
             end_date: (singleData as any).as_of_date,
             data: singleData,
-            pdf_url: metadata.pdf_url,
-            original_filename: r.filename
-          });
+          };
+          addPeriodWithDedup(singlePeriod, metadata.pdf_url, r.filename);
           if (singleData.currency) currency = singleData.currency;
           if (singleData.scale) scale = singleData.scale;
        }
     }
   });
+
+  // Extract deduplicated periods and sort by end_date (most recent first)
+  const periods = Array.from(periodMap.values())
+    .map(v => v.period)
+    .sort((a, b) => {
+      // Sort by end_date descending (most recent first)
+      const dateA = a.end_date || a.period_label || '';
+      const dateB = b.end_date || b.period_label || '';
+      return dateB.localeCompare(dateA);
+    });
 
   if (periods.length === 0) return null;
 
