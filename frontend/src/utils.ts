@@ -78,6 +78,17 @@ export function getConfidenceBgColor(confidence: number): string {
  * Convert field name to readable label
  */
 export function fieldNameToLabel(fieldName: string): string {
+  // Special cases for specific field names
+  const specialCases: Record<string, string> = {
+    'ppe_gross': 'PP&E Gross',
+    'ppe_net': 'PP&E Net',
+    'intangible_assets': 'Gross Intangible Assets',
+  };
+  
+  if (specialCases[fieldName]) {
+    return specialCases[fieldName];
+  }
+  
   return fieldName
     .split('_')
     .map(word => word.charAt(0).toUpperCase() + word.slice(1))

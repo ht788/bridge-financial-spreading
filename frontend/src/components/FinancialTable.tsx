@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { 
   LineItem, 
+  BreakdownItem,
   FinancialStatement, 
   IncomeStatement, 
   BalanceSheet,
@@ -12,8 +13,28 @@ import {
 import { formatCurrency, fieldNameToLabel, normalizePeriodLabel } from '../utils';
 import { ConfidenceBadge } from './ConfidenceBadge';
 import { TrendSparkline } from './TrendSparkline';
-import { Info, Calendar, FileText } from 'lucide-react';
+import { Info, Calendar, FileText, ChevronRight, ChevronDown } from 'lucide-react';
 import clsx from 'clsx';
+
+// Helper to check if a line item has breakdown data
+const hasBreakdown = (lineItem: LineItem | undefined): boolean => {
+  return !!(lineItem?.breakdown && lineItem.breakdown.length > 0);
+};
+
+// Helper to get all unique breakdown labels across periods
+const getBreakdownLabels = (
+  periods: Array<{ data: Record<string, LineItem> }>,
+  fieldName: string
+): string[] => {
+  const labelsSet = new Set<string>();
+  periods.forEach(period => {
+    const lineItem = period.data[fieldName as keyof typeof period.data] as LineItem;
+    if (lineItem?.breakdown) {
+      lineItem.breakdown.forEach(item => labelsSet.add(item.label));
+    }
+  });
+  return Array.from(labelsSet);
+};
 
 interface FinancialTableProps {
   data: FinancialStatement | MultiPeriodFinancialStatement;
@@ -88,6 +109,19 @@ interface MultiPeriodIncomeTableProps {
 
 const MultiPeriodIncomeStatementTable: React.FC<MultiPeriodIncomeTableProps> = ({ data, onPeriodSelect }) => {
   const { periods, currency = 'USD', scale = 'units' } = data;
+  const [expandedRows, setExpandedRows] = useState<Set<string>>(new Set());
+
+  const toggleRow = (fieldName: string) => {
+    setExpandedRows(prev => {
+      const next = new Set(prev);
+      if (next.has(fieldName)) {
+        next.delete(fieldName);
+      } else {
+        next.add(fieldName);
+      }
+      return next;
+    });
+  };
   
   const sections = [
     {
@@ -172,47 +206,103 @@ const MultiPeriodIncomeStatementTable: React.FC<MultiPeriodIncomeTableProps> = (
                 
                 if (!hasField) return null;
 
+                // Check if any period has breakdown data for this field
+                const rowHasBreakdown = periods.some(p => {
+                  const lineItem = p.data[fieldName as keyof IncomeStatement] as LineItem;
+                  return hasBreakdown(lineItem);
+                });
+                const isExpanded = expandedRows.has(fieldName);
+                const breakdownLabels = rowHasBreakdown 
+                  ? getBreakdownLabels(periods as Array<{ data: Record<string, LineItem> }>, fieldName)
+                  : [];
+
                 return (
-                  <tr
-                    key={fieldName}
-                    className={clsx(
-                      'hover:bg-gray-50 transition-colors',
-                      'even:bg-gray-50/30',
-                      fieldName.includes('total') || fieldName.includes('net_income')
-                        ? 'font-semibold bg-gray-50/50'
-                        : ''
-                    )}
-                  >
-                    <td className="py-2.5 px-3 text-sm text-gray-900">
-                      {fieldNameToLabel(fieldName)}
-                    </td>
-                    <td className="py-2.5 px-3 text-center">
-                      <TrendSparkline 
-                        data={periods.map(p => {
-                          const item = p.data[fieldName as keyof IncomeStatement] as LineItem;
-                          return item && typeof item === 'object' && 'value' in item ? item.value : null;
-                        })} 
-                      />
-                    </td>
-                    {periods.map((period, periodIdx) => {
-                      const lineItem = period.data[fieldName as keyof IncomeStatement] as LineItem;
-                      if (!lineItem || typeof lineItem !== 'object' || !('value' in lineItem)) {
-                        return <td key={periodIdx} className="py-2.5 px-3 text-sm text-right font-mono text-gray-400">—</td>;
-                      }
-                      
-                      return (
-                        <td key={periodIdx} className="py-2.5 px-3 text-sm text-right">
-                          <div className="flex items-center justify-end gap-1.5">
-                            <span className="font-mono">
-                              {formatCurrency(lineItem.value, currency, scale)}
+                  <React.Fragment key={fieldName}>
+                    <tr
+                      className={clsx(
+                        'hover:bg-gray-50 transition-colors',
+                        'even:bg-gray-50/30',
+                        fieldName.includes('total') || fieldName.includes('net_income')
+                          ? 'font-semibold bg-gray-50/50'
+                          : '',
+                        rowHasBreakdown ? 'cursor-pointer' : ''
+                      )}
+                      onClick={() => rowHasBreakdown && toggleRow(fieldName)}
+                    >
+                      <td className="py-2.5 px-3 text-sm text-gray-900">
+                        <div className="flex items-center gap-1">
+                          {rowHasBreakdown ? (
+                            <span className="text-gray-400 hover:text-gray-600 transition-colors">
+                              {isExpanded ? (
+                                <ChevronDown className="w-4 h-4" />
+                              ) : (
+                                <ChevronRight className="w-4 h-4" />
+                              )}
                             </span>
-                            <ConfidenceBadge confidence={lineItem.confidence} compact />
-                            <Tooltip lineItem={lineItem} fieldName={fieldName} />
-                          </div>
+                          ) : (
+                            <span className="w-4" /> 
+                          )}
+                          {fieldNameToLabel(fieldName)}
+                        </div>
+                      </td>
+                      <td className="py-2.5 px-3 text-center">
+                        <TrendSparkline 
+                          data={periods.map(p => {
+                            const item = p.data[fieldName as keyof IncomeStatement] as LineItem;
+                            return item && typeof item === 'object' && 'value' in item ? item.value : null;
+                          })} 
+                        />
+                      </td>
+                      {periods.map((period, periodIdx) => {
+                        const lineItem = period.data[fieldName as keyof IncomeStatement] as LineItem;
+                        if (!lineItem || typeof lineItem !== 'object' || !('value' in lineItem)) {
+                          return <td key={periodIdx} className="py-2.5 px-3 text-sm text-right font-mono text-gray-400">—</td>;
+                        }
+                        
+                        return (
+                          <td key={periodIdx} className="py-2.5 px-3 text-sm text-right">
+                            <div className="flex items-center justify-end gap-1.5">
+                              <span className="font-mono">
+                                {formatCurrency(lineItem.value, currency, scale)}
+                              </span>
+                              <ConfidenceBadge confidence={lineItem.confidence} compact />
+                              <Tooltip lineItem={lineItem} fieldName={fieldName} />
+                            </div>
+                          </td>
+                        );
+                      })}
+                    </tr>
+                    {/* Breakdown sub-rows */}
+                    {isExpanded && breakdownLabels.map((label) => (
+                      <tr
+                        key={`${fieldName}-breakdown-${label}`}
+                        className="bg-gray-50/50 hover:bg-gray-100/50 transition-colors"
+                      >
+                        <td className="py-1.5 pl-9 pr-3 text-xs text-gray-600">
+                          {label}
                         </td>
-                      );
-                    })}
-                  </tr>
+                        <td className="py-1.5 px-3">
+                          {/* No sparkline for breakdown rows */}
+                        </td>
+                        {periods.map((period, periodIdx) => {
+                          const lineItem = period.data[fieldName as keyof IncomeStatement] as LineItem;
+                          const breakdownItem = lineItem?.breakdown?.find(b => b.label === label);
+                          
+                          if (!breakdownItem) {
+                            return <td key={periodIdx} className="py-1.5 px-3 text-xs text-right font-mono text-gray-400">—</td>;
+                          }
+                          
+                          return (
+                            <td key={periodIdx} className="py-1.5 px-3 text-xs text-right">
+                              <span className="font-mono text-gray-600">
+                                {formatCurrency(breakdownItem.value, currency, scale)}
+                              </span>
+                            </td>
+                          );
+                        })}
+                      </tr>
+                    ))}
+                  </React.Fragment>
                 );
               })}
             </tbody>
@@ -234,6 +324,19 @@ interface MultiPeriodBalanceTableProps {
 
 const MultiPeriodBalanceSheetTable: React.FC<MultiPeriodBalanceTableProps> = ({ data, onPeriodSelect }) => {
   const { periods, currency = 'USD', scale = 'units' } = data;
+  const [expandedRows, setExpandedRows] = useState<Set<string>>(new Set());
+
+  const toggleRow = (fieldName: string) => {
+    setExpandedRows(prev => {
+      const next = new Set(prev);
+      if (next.has(fieldName)) {
+        next.delete(fieldName);
+      } else {
+        next.add(fieldName);
+      }
+      return next;
+    });
+  };
   
   const sections = [
     {
@@ -361,44 +464,100 @@ const MultiPeriodBalanceSheetTable: React.FC<MultiPeriodBalanceTableProps> = ({ 
                 
                 if (!hasField) return null;
 
+                // Check if any period has breakdown data for this field
+                const rowHasBreakdown = periods.some(p => {
+                  const lineItem = p.data[fieldName as keyof BalanceSheet] as LineItem;
+                  return hasBreakdown(lineItem);
+                });
+                const isExpanded = expandedRows.has(fieldName);
+                const breakdownLabels = rowHasBreakdown 
+                  ? getBreakdownLabels(periods as Array<{ data: Record<string, LineItem> }>, fieldName)
+                  : [];
+
                 return (
-                  <tr
-                    key={fieldName}
-                    className={clsx(
-                      'hover:bg-gray-50',
-                      fieldName.includes('total') ? 'font-semibold bg-gray-50/50' : ''
-                    )}
-                  >
-                    <td className="py-2.5 px-3 text-sm text-gray-900">
-                      {fieldNameToLabel(fieldName)}
-                    </td>
-                    <td className="py-2.5 px-3 text-center">
-                      <TrendSparkline 
-                        data={periods.map(p => {
-                          const item = p.data[fieldName as keyof BalanceSheet] as LineItem;
-                          return item && typeof item === 'object' && 'value' in item ? item.value : null;
-                        })} 
-                      />
-                    </td>
-                    {periods.map((period, periodIdx) => {
-                      const lineItem = period.data[fieldName as keyof BalanceSheet] as LineItem;
-                      if (!lineItem || typeof lineItem !== 'object' || !('value' in lineItem)) {
-                        return <td key={periodIdx} className="py-2.5 px-3 text-sm text-right font-mono text-gray-400">—</td>;
-                      }
-                      
-                      return (
-                        <td key={periodIdx} className="py-2.5 px-3 text-sm text-right">
-                          <div className="flex items-center justify-end gap-1.5">
-                            <span className="font-mono">
-                              {formatCurrency(lineItem.value, currency, scale)}
+                  <React.Fragment key={fieldName}>
+                    <tr
+                      className={clsx(
+                        'hover:bg-gray-50',
+                        fieldName.includes('total') ? 'font-semibold bg-gray-50/50' : '',
+                        rowHasBreakdown ? 'cursor-pointer' : ''
+                      )}
+                      onClick={() => rowHasBreakdown && toggleRow(fieldName)}
+                    >
+                      <td className="py-2.5 px-3 text-sm text-gray-900">
+                        <div className="flex items-center gap-1">
+                          {rowHasBreakdown ? (
+                            <span className="text-gray-400 hover:text-gray-600 transition-colors">
+                              {isExpanded ? (
+                                <ChevronDown className="w-4 h-4" />
+                              ) : (
+                                <ChevronRight className="w-4 h-4" />
+                              )}
                             </span>
-                            <ConfidenceBadge confidence={lineItem.confidence} compact />
-                            <Tooltip lineItem={lineItem} fieldName={fieldName} />
-                          </div>
+                          ) : (
+                            <span className="w-4" /> 
+                          )}
+                          {fieldNameToLabel(fieldName)}
+                        </div>
+                      </td>
+                      <td className="py-2.5 px-3 text-center">
+                        <TrendSparkline 
+                          data={periods.map(p => {
+                            const item = p.data[fieldName as keyof BalanceSheet] as LineItem;
+                            return item && typeof item === 'object' && 'value' in item ? item.value : null;
+                          })} 
+                        />
+                      </td>
+                      {periods.map((period, periodIdx) => {
+                        const lineItem = period.data[fieldName as keyof BalanceSheet] as LineItem;
+                        if (!lineItem || typeof lineItem !== 'object' || !('value' in lineItem)) {
+                          return <td key={periodIdx} className="py-2.5 px-3 text-sm text-right font-mono text-gray-400">—</td>;
+                        }
+                        
+                        return (
+                          <td key={periodIdx} className="py-2.5 px-3 text-sm text-right">
+                            <div className="flex items-center justify-end gap-1.5">
+                              <span className="font-mono">
+                                {formatCurrency(lineItem.value, currency, scale)}
+                              </span>
+                              <ConfidenceBadge confidence={lineItem.confidence} compact />
+                              <Tooltip lineItem={lineItem} fieldName={fieldName} />
+                            </div>
+                          </td>
+                        );
+                      })}
+                    </tr>
+                    {/* Breakdown sub-rows */}
+                    {isExpanded && breakdownLabels.map((label) => (
+                      <tr
+                        key={`${fieldName}-breakdown-${label}`}
+                        className="bg-gray-50/50 hover:bg-gray-100/50 transition-colors"
+                      >
+                        <td className="py-1.5 pl-9 pr-3 text-xs text-gray-600">
+                          {label}
                         </td>
-                      );
-                    })}
-                  </tr>
+                        <td className="py-1.5 px-3">
+                          {/* No sparkline for breakdown rows */}
+                        </td>
+                        {periods.map((period, periodIdx) => {
+                          const lineItem = period.data[fieldName as keyof BalanceSheet] as LineItem;
+                          const breakdownItem = lineItem?.breakdown?.find(b => b.label === label);
+                          
+                          if (!breakdownItem) {
+                            return <td key={periodIdx} className="py-1.5 px-3 text-xs text-right font-mono text-gray-400">—</td>;
+                          }
+                          
+                          return (
+                            <td key={periodIdx} className="py-1.5 px-3 text-xs text-right">
+                              <span className="font-mono text-gray-600">
+                                {formatCurrency(breakdownItem.value, currency, scale)}
+                              </span>
+                            </td>
+                          );
+                        })}
+                      </tr>
+                    ))}
+                  </React.Fragment>
                 );
               })}
             </tbody>
@@ -414,6 +573,20 @@ const MultiPeriodBalanceSheetTable: React.FC<MultiPeriodBalanceTableProps> = ({ 
 // =============================================================================
 
 const SinglePeriodIncomeStatementTable: React.FC<{ data: IncomeStatement }> = ({ data }) => {
+  const [expandedRows, setExpandedRows] = useState<Set<string>>(new Set());
+
+  const toggleRow = (fieldName: string) => {
+    setExpandedRows(prev => {
+      const next = new Set(prev);
+      if (next.has(fieldName)) {
+        next.delete(fieldName);
+      } else {
+        next.add(fieldName);
+      }
+      return next;
+    });
+  };
+
   const sections = [
     {
       title: 'Revenue & Gross Profit',
@@ -456,29 +629,68 @@ const SinglePeriodIncomeStatementTable: React.FC<{ data: IncomeStatement }> = ({
                 const lineItem = data[fieldName as keyof IncomeStatement] as LineItem;
                 if (!lineItem || typeof lineItem !== 'object' || !('value' in lineItem)) return null;
 
+                const rowHasBreakdown = hasBreakdown(lineItem);
+                const isExpanded = expandedRows.has(fieldName);
+
                 return (
-                  <tr
-                    key={fieldName}
-                    className={clsx(
-                      'hover:bg-gray-50',
-                      fieldName.includes('total') || fieldName.includes('net_income')
-                        ? 'font-semibold'
-                        : ''
-                    )}
-                  >
-                    <td className="py-3 px-4 text-sm text-gray-900">
-                      {fieldNameToLabel(fieldName)}
-                    </td>
-                    <td className="py-3 px-4 text-sm text-right font-mono">
-                      {formatCurrency(lineItem.value, data.currency, data.scale)}
-                    </td>
-                    <td className="py-3 px-4 text-center">
-                      <ConfidenceBadge confidence={lineItem.confidence} />
-                    </td>
-                    <td className="py-3 px-4 text-center">
-                      <Tooltip lineItem={lineItem} fieldName={fieldName} />
-                    </td>
-                  </tr>
+                  <React.Fragment key={fieldName}>
+                    <tr
+                      className={clsx(
+                        'hover:bg-gray-50',
+                        fieldName.includes('total') || fieldName.includes('net_income')
+                          ? 'font-semibold'
+                          : '',
+                        rowHasBreakdown ? 'cursor-pointer' : ''
+                      )}
+                      onClick={() => rowHasBreakdown && toggleRow(fieldName)}
+                    >
+                      <td className="py-3 px-4 text-sm text-gray-900">
+                        <div className="flex items-center gap-1">
+                          {rowHasBreakdown ? (
+                            <span className="text-gray-400 hover:text-gray-600 transition-colors">
+                              {isExpanded ? (
+                                <ChevronDown className="w-4 h-4" />
+                              ) : (
+                                <ChevronRight className="w-4 h-4" />
+                              )}
+                            </span>
+                          ) : (
+                            <span className="w-4" /> 
+                          )}
+                          {fieldNameToLabel(fieldName)}
+                        </div>
+                      </td>
+                      <td className="py-3 px-4 text-sm text-right font-mono">
+                        {formatCurrency(lineItem.value, data.currency, data.scale)}
+                      </td>
+                      <td className="py-3 px-4 text-center">
+                        <ConfidenceBadge confidence={lineItem.confidence} />
+                      </td>
+                      <td className="py-3 px-4 text-center">
+                        <Tooltip lineItem={lineItem} fieldName={fieldName} />
+                      </td>
+                    </tr>
+                    {/* Breakdown sub-rows */}
+                    {isExpanded && lineItem.breakdown?.map((breakdownItem) => (
+                      <tr
+                        key={`${fieldName}-breakdown-${breakdownItem.label}`}
+                        className="bg-gray-50/50 hover:bg-gray-100/50 transition-colors"
+                      >
+                        <td className="py-2 pl-10 pr-4 text-xs text-gray-600">
+                          {breakdownItem.label}
+                        </td>
+                        <td className="py-2 px-4 text-xs text-right font-mono text-gray-600">
+                          {formatCurrency(breakdownItem.value, data.currency, data.scale)}
+                        </td>
+                        <td className="py-2 px-4">
+                          {/* No confidence for breakdown items */}
+                        </td>
+                        <td className="py-2 px-4">
+                          {/* No tooltip for breakdown items */}
+                        </td>
+                      </tr>
+                    ))}
+                  </React.Fragment>
                 );
               })}
             </tbody>
@@ -490,6 +702,20 @@ const SinglePeriodIncomeStatementTable: React.FC<{ data: IncomeStatement }> = ({
 };
 
 const SinglePeriodBalanceSheetTable: React.FC<{ data: BalanceSheet }> = ({ data }) => {
+  const [expandedRows, setExpandedRows] = useState<Set<string>>(new Set());
+
+  const toggleRow = (fieldName: string) => {
+    setExpandedRows(prev => {
+      const next = new Set(prev);
+      if (next.has(fieldName)) {
+        next.delete(fieldName);
+      } else {
+        next.add(fieldName);
+      }
+      return next;
+    });
+  };
+
   const sections = [
     {
       title: 'Current Assets',
@@ -575,27 +801,66 @@ const SinglePeriodBalanceSheetTable: React.FC<{ data: BalanceSheet }> = ({ data 
                 const lineItem = data[fieldName as keyof BalanceSheet] as LineItem;
                 if (!lineItem || typeof lineItem !== 'object' || !('value' in lineItem)) return null;
 
+                const rowHasBreakdown = hasBreakdown(lineItem);
+                const isExpanded = expandedRows.has(fieldName);
+
                 return (
-                  <tr
-                    key={fieldName}
-                    className={clsx(
-                      'hover:bg-gray-50',
-                      fieldName.includes('total') ? 'font-semibold' : ''
-                    )}
-                  >
-                    <td className="py-3 px-4 text-sm text-gray-900">
-                      {fieldNameToLabel(fieldName)}
-                    </td>
-                    <td className="py-3 px-4 text-sm text-right font-mono">
-                      {formatCurrency(lineItem.value, data.currency, data.scale)}
-                    </td>
-                    <td className="py-3 px-4 text-center">
-                      <ConfidenceBadge confidence={lineItem.confidence} />
-                    </td>
-                    <td className="py-3 px-4 text-center">
-                      <Tooltip lineItem={lineItem} fieldName={fieldName} />
-                    </td>
-                  </tr>
+                  <React.Fragment key={fieldName}>
+                    <tr
+                      className={clsx(
+                        'hover:bg-gray-50',
+                        fieldName.includes('total') ? 'font-semibold' : '',
+                        rowHasBreakdown ? 'cursor-pointer' : ''
+                      )}
+                      onClick={() => rowHasBreakdown && toggleRow(fieldName)}
+                    >
+                      <td className="py-3 px-4 text-sm text-gray-900">
+                        <div className="flex items-center gap-1">
+                          {rowHasBreakdown ? (
+                            <span className="text-gray-400 hover:text-gray-600 transition-colors">
+                              {isExpanded ? (
+                                <ChevronDown className="w-4 h-4" />
+                              ) : (
+                                <ChevronRight className="w-4 h-4" />
+                              )}
+                            </span>
+                          ) : (
+                            <span className="w-4" /> 
+                          )}
+                          {fieldNameToLabel(fieldName)}
+                        </div>
+                      </td>
+                      <td className="py-3 px-4 text-sm text-right font-mono">
+                        {formatCurrency(lineItem.value, data.currency, data.scale)}
+                      </td>
+                      <td className="py-3 px-4 text-center">
+                        <ConfidenceBadge confidence={lineItem.confidence} />
+                      </td>
+                      <td className="py-3 px-4 text-center">
+                        <Tooltip lineItem={lineItem} fieldName={fieldName} />
+                      </td>
+                    </tr>
+                    {/* Breakdown sub-rows */}
+                    {isExpanded && lineItem.breakdown?.map((breakdownItem) => (
+                      <tr
+                        key={`${fieldName}-breakdown-${breakdownItem.label}`}
+                        className="bg-gray-50/50 hover:bg-gray-100/50 transition-colors"
+                      >
+                        <td className="py-2 pl-10 pr-4 text-xs text-gray-600">
+                          {breakdownItem.label}
+                        </td>
+                        <td className="py-2 px-4 text-xs text-right font-mono text-gray-600">
+                          {formatCurrency(breakdownItem.value, data.currency, data.scale)}
+                        </td>
+                        <td className="py-2 px-4">
+                          {/* No confidence for breakdown items */}
+                        </td>
+                        <td className="py-2 px-4">
+                          {/* No tooltip for breakdown items */}
+                        </td>
+                      </tr>
+                    ))}
+                  </React.Fragment>
                 );
               })}
             </tbody>

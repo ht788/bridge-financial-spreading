@@ -41,19 +41,43 @@ export const SpreadingView: React.FC<SpreadingViewProps> = ({
   const isCombined = isCombinedExtraction(data);
   const combinedData = isCombined ? data as CombinedFinancialExtraction : null;
   
+  // Helper to inject pdf_url into period data if not present
+  const injectPdfUrlIntoPeriods = (periodData: MultiPeriodFinancialStatement | null): MultiPeriodFinancialStatement | null => {
+    if (!periodData || !isMultiPeriod(periodData)) return periodData;
+    
+    // Only inject if periods don't already have pdf_url
+    const needsInjection = periodData.periods.some(p => !p.pdf_url);
+    if (!needsInjection) return periodData;
+    
+    return {
+      ...periodData,
+      periods: periodData.periods.map(p => ({
+        ...p,
+        pdf_url: p.pdf_url || metadata.pdf_url,
+        original_filename: p.original_filename || metadata.original_filename,
+      })),
+    };
+  };
+  
   // Get the data for the current view
   const getDisplayData = () => {
     if (isCombined && combinedData) {
       if (activeTab === 'income' && combinedData.income_statement) {
-        return combinedData.income_statement;
+        return injectPdfUrlIntoPeriods(combinedData.income_statement);
       }
       if (activeTab === 'balance' && combinedData.balance_sheet) {
-        return combinedData.balance_sheet;
+        return injectPdfUrlIntoPeriods(combinedData.balance_sheet);
       }
       // Fallback to whichever is available
-      return combinedData.income_statement || combinedData.balance_sheet;
+      return injectPdfUrlIntoPeriods(combinedData.income_statement || combinedData.balance_sheet);
     }
-    return data as FinancialStatement | MultiPeriodFinancialStatement;
+    
+    // For non-combined data, also inject pdf_url
+    const rawData = data as FinancialStatement | MultiPeriodFinancialStatement;
+    if (isMultiPeriod(rawData)) {
+      return injectPdfUrlIntoPeriods(rawData as MultiPeriodFinancialStatement);
+    }
+    return rawData;
   };
   
   const displayData = getDisplayData();

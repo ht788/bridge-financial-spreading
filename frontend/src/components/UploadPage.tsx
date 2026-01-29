@@ -1,5 +1,5 @@
 import React, { useState, useCallback } from 'react';
-import { Upload, FileText, Loader2, X, Plus, ChevronDown, ChevronUp, Cpu } from 'lucide-react';
+import { Upload, FileText, FileSpreadsheet, Loader2, X, Plus, ChevronDown, ChevronUp, Cpu } from 'lucide-react';
 import clsx from 'clsx';
 import { DocType, FileUploadItem } from '../types';
 import { getAllModels, getDefaultModel, getGroupedModels, getModelDisplayInfo } from '../modelConfig';
@@ -34,9 +34,16 @@ export const UploadPage: React.FC<UploadPageProps> = ({
 
   const addFiles = useCallback((newFiles: FileList | File[]) => {
     const fileArray = Array.from(newFiles);
-    const pdfFiles = fileArray.filter(f => f.type === 'application/pdf' || f.name.endsWith('.pdf'));
+    // Accept PDF and Excel files
+    const validExtensions = ['.pdf', '.xlsx', '.xls', '.xlsm'];
+    const validFiles = fileArray.filter(f => 
+      f.type === 'application/pdf' || 
+      f.type === 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' ||
+      f.type === 'application/vnd.ms-excel' ||
+      validExtensions.some(ext => f.name.toLowerCase().endsWith(ext))
+    );
     
-    const newItems: FileUploadItem[] = pdfFiles.map(file => ({
+    const newItems: FileUploadItem[] = validFiles.map(file => ({
       id: generateId(),
       file,
       docType: guessDocType(file.name),
@@ -147,14 +154,14 @@ export const UploadPage: React.FC<UploadPageProps> = ({
                 <input
                   id="file-upload"
                   type="file"
-                  accept=".pdf"
+                  accept=".pdf,.xlsx,.xls,.xlsm"
                   multiple
                   className="hidden"
                   onChange={handleFileInput}
                   disabled={isProcessing}
                 />
               </div>
-              <p className="text-sm text-gray-500">PDF files up to 50MB each</p>
+              <p className="text-sm text-gray-500">PDF or Excel files up to 50MB each</p>
             </div>
           ) : (
             <div className="space-y-4">
@@ -184,7 +191,7 @@ export const UploadPage: React.FC<UploadPageProps> = ({
                     <input
                       id="file-upload-more"
                       type="file"
-                      accept=".pdf"
+                      accept=".pdf,.xlsx,.xls,.xlsm"
                       multiple
                       className="hidden"
                       onChange={handleFileInput}
@@ -291,6 +298,29 @@ export const UploadPage: React.FC<UploadPageProps> = ({
         {/* Summary Stats */}
         {hasFiles && (
           <div className="flex items-center justify-center gap-6 text-sm flex-wrap">
+            {/* File type breakdown */}
+            {(() => {
+              const excelCount = displayFiles.filter(f => f.file.name.toLowerCase().match(/\.(xlsx|xls|xlsm)$/)).length;
+              const pdfCount = displayFiles.length - excelCount;
+              return (
+                <>
+                  {pdfCount > 0 && (
+                    <div className="flex items-center gap-2">
+                      <span className="w-3 h-3 rounded-full bg-red-400"></span>
+                      <span className="text-gray-600">{pdfCount} PDF</span>
+                    </div>
+                  )}
+                  {excelCount > 0 && (
+                    <div className="flex items-center gap-2">
+                      <span className="w-3 h-3 rounded-full bg-green-500"></span>
+                      <span className="text-gray-600">{excelCount} Excel</span>
+                    </div>
+                  )}
+                </>
+              );
+            })()}
+            <span className="text-gray-300">|</span>
+            {/* Doc type breakdown */}
             {displayFiles.filter(f => f.docType === 'auto').length > 0 && (
               <div className="flex items-center gap-2">
                 <span className="w-3 h-3 rounded-full bg-emerald-500"></span>
@@ -375,6 +405,10 @@ const FileRow: React.FC<FileRowProps> = ({ item, index, onRemove, onUpdateDocTyp
     error: 'Failed',
   };
 
+  // Determine if file is Excel
+  const isExcel = item.file.name.toLowerCase().match(/\.(xlsx|xls|xlsm)$/);
+  const FileIcon = isExcel ? FileSpreadsheet : FileText;
+
   return (
     <div
       className={clsx(
@@ -385,22 +419,26 @@ const FileRow: React.FC<FileRowProps> = ({ item, index, onRemove, onUpdateDocTyp
         item.status === 'pending' && 'border-gray-200 hover:border-gray-300'
       )}
     >
-      {/* File Icon */}
+      {/* File Icon - different for Excel vs PDF */}
       <div className={clsx(
         'w-10 h-10 rounded-lg flex items-center justify-center flex-shrink-0',
-        item.docType === 'auto'
-          ? 'bg-emerald-100'
-          : item.docType === 'income' 
-            ? 'bg-blue-100' 
-            : 'bg-purple-100'
-      )}>
-        <FileText className={clsx(
-          'w-5 h-5',
-          item.docType === 'auto'
-            ? 'text-emerald-600'
+        isExcel 
+          ? 'bg-green-100'
+          : item.docType === 'auto'
+            ? 'bg-emerald-100'
             : item.docType === 'income' 
-              ? 'text-blue-600' 
-              : 'text-purple-600'
+              ? 'bg-blue-100' 
+              : 'bg-purple-100'
+      )}>
+        <FileIcon className={clsx(
+          'w-5 h-5',
+          isExcel
+            ? 'text-green-600'
+            : item.docType === 'auto'
+              ? 'text-emerald-600'
+              : item.docType === 'income' 
+                ? 'text-blue-600' 
+                : 'text-purple-600'
         )} />
       </div>
 

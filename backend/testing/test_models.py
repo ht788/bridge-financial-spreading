@@ -247,7 +247,7 @@ class TestRunConfig(BaseModel):
         default=False,
         description="Enable extended thinking for Anthropic models (ignored for OpenAI)"
     )
-    dpi: int = Field(default=200, description="PDF conversion DPI")
+    dpi: int = Field(default=150, description="PDF conversion DPI (optimized for speed while preserving number readability)")
     max_pages: Optional[int] = Field(default=None, description="Max pages per file")
     tolerance_percent: float = Field(default=5.0, description="Default tolerance for comparisons")
 

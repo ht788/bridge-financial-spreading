@@ -14,7 +14,7 @@ import base64
 import io
 import logging
 from pathlib import Path
-from typing import List, Optional, Tuple
+from typing import List, Optional, Tuple, Dict
 
 from langsmith import traceable
 
@@ -36,7 +36,7 @@ MAX_IMAGE_WIDTH = 1024
 )
 def pdf_to_base64_images(
     pdf_path: str,
-    dpi: int = 200,
+    dpi: int = 150,
     max_pages: Optional[int] = None,
     image_format: str = "JPEG",
     max_width: int = MAX_IMAGE_WIDTH
@@ -402,6 +402,178 @@ def estimate_token_count(base64_images: List[Tuple[str, str]]) -> int:
     # At 1024px width, US Letter ~1024x1300px → ~6 tiles
     TOKENS_PER_PAGE_ESTIMATE = 85 + (6 * 170)  # ~1105 per page
     return len(base64_images) * TOKENS_PER_PAGE_ESTIMATE
+
+
+@traceable(
+    name="excel_to_csv_sections",
+    tags=["preprocessing", "excel", "multi-sheet"],
+    metadata={"operation": "excel_to_csv"}
+)
+def excel_to_csv_sections(
+    excel_path: str,
+    max_rows_per_sheet: Optional[int] = None,
+    sheets: Optional[List[str]] = None
+) -> Tuple[str, List[str]]:
+    """
+    Convert a multi-worksheet Excel file to CSV-formatted sections.
+    
+    Each worksheet is converted to CSV and wrapped with clear section headers.
+    This format is ideal for LLM processing - clean, unambiguous, well-understood.
+    
+    Output format:
+        === SHEET: Sheet Name ===
+        col1,col2,col3
+        val1,val2,val3
+        ...
+        
+        === SHEET: Another Sheet ===
+        ...
+    
+    Args:
+        excel_path: Path to the Excel file (.xlsx, .xls, .xlsm)
+        max_rows_per_sheet: Maximum rows per sheet (None = all)
+        sheets: Specific sheet names to include (None = all sheets)
+        
+    Returns:
+        Tuple of (combined_csv_text, list_of_sheet_names)
+    """
+    excel_file = Path(excel_path)
+    if not excel_file.exists():
+        raise FileNotFoundError(f"Excel file not found: {excel_path}")
+    
+    valid_extensions = {".xlsx", ".xls", ".xlsm"}
+    if excel_file.suffix.lower() not in valid_extensions:
+        raise ValueError(
+            f"Invalid Excel file extension: {excel_file.suffix}. "
+            f"Expected one of: {valid_extensions}"
+        )
+    
+    try:
+        import pandas as pd
+    except ImportError as e:
+        raise ImportError(
+            "pandas is required for Excel processing. "
+            "Install with: pip install pandas openpyxl"
+        ) from e
+    
+    logger.info(f"Converting Excel to CSV sections: {excel_path}")
+    
+    # Read all sheets into a dictionary
+    try:
+        # Read without specifying sheet_name to get all sheets
+        all_sheets = pd.read_excel(
+            excel_path,
+            sheet_name=None,  # None = read all sheets into dict
+            nrows=max_rows_per_sheet
+        )
+    except Exception as e:
+        raise ValueError(f"Failed to read Excel file: {e}") from e
+    
+    if not all_sheets:
+        raise ValueError(f"Excel file appears to be empty: {excel_path}")
+    
+    # Filter sheets if specific ones requested
+    if sheets:
+        all_sheets = {k: v for k, v in all_sheets.items() if k in sheets}
+        if not all_sheets:
+            raise ValueError(
+                f"None of the requested sheets found. "
+                f"Available: {list(pd.read_excel(excel_path, sheet_name=None).keys())}"
+            )
+    
+    # Convert each sheet to CSV and combine
+    csv_sections = []
+    sheet_names = []
+    
+    for sheet_name, df in all_sheets.items():
+        # Skip empty sheets
+        if df.empty:
+            logger.debug(f"Skipping empty sheet: {sheet_name}")
+            continue
+        
+        sheet_names.append(sheet_name)
+        
+        # Clean up the dataframe
+        # - Drop completely empty rows and columns
+        df = df.dropna(how='all')
+        df = df.dropna(axis=1, how='all')
+        
+        # Convert to CSV string (no index, clean formatting)
+        csv_content = df.to_csv(index=False, lineterminator='\n')
+        
+        # Build section with clear header
+        section = f"=== SHEET: {sheet_name} ===\n{csv_content}"
+        csv_sections.append(section)
+        
+        logger.info(f"Converted sheet '{sheet_name}': {len(df)} rows, {len(df.columns)} columns")
+    
+    combined_csv = "\n\n".join(csv_sections)
+    
+    logger.info(f"Converted {len(sheet_names)} sheets to CSV format")
+    
+    return combined_csv, sheet_names
+
+
+def detect_statement_type_from_sheet(sheet_name: str, csv_content: str) -> Optional[str]:
+    """
+    Detect whether a sheet contains an Income Statement or Balance Sheet.
+    
+    Uses heuristics based on:
+    1. Sheet name keywords
+    2. Content keywords (row labels)
+    
+    Args:
+        sheet_name: Name of the worksheet
+        csv_content: CSV content of the sheet
+        
+    Returns:
+        'income', 'balance', or None if unclear
+    """
+    name_lower = sheet_name.lower()
+    content_lower = csv_content.lower()
+    
+    # Income Statement indicators
+    income_name_keywords = ['income', 'p&l', 'profit', 'loss', 'earnings', 'operations']
+    income_content_keywords = [
+        'revenue', 'sales', 'net income', 'gross profit', 'operating income',
+        'cost of goods', 'cogs', 'operating expenses', 'ebitda', 'net profit'
+    ]
+    
+    # Balance Sheet indicators
+    balance_name_keywords = ['balance', 'position', 'assets', 'financial position']
+    balance_content_keywords = [
+        'total assets', 'total liabilities', 'shareholders equity', 'stockholders equity',
+        'current assets', 'fixed assets', 'accounts receivable', 'accounts payable',
+        'retained earnings', 'total equity'
+    ]
+    
+    # Score based on matches
+    income_score = 0
+    balance_score = 0
+    
+    # Check sheet name (weighted higher)
+    for kw in income_name_keywords:
+        if kw in name_lower:
+            income_score += 3
+    for kw in balance_name_keywords:
+        if kw in name_lower:
+            balance_score += 3
+    
+    # Check content
+    for kw in income_content_keywords:
+        if kw in content_lower:
+            income_score += 1
+    for kw in balance_content_keywords:
+        if kw in content_lower:
+            balance_score += 1
+    
+    # Determine type based on scores
+    if income_score > balance_score and income_score >= 2:
+        return 'income'
+    elif balance_score > income_score and balance_score >= 2:
+        return 'balance'
+    
+    return None
 
 
 def format_currency(value: Optional[float], scale: str = "units") -> str:

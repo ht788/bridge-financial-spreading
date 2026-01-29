@@ -2,11 +2,17 @@
  * Type definitions for the financial spreader application
  */
 
+export interface BreakdownItem {
+  label: string;
+  value: number;
+}
+
 export interface LineItem {
   value: number | null;
   confidence: number;
   raw_fields_used: string[];
   source_section_hint: string | null;
+  breakdown?: BreakdownItem[];
 }
 
 export interface IncomeStatement {

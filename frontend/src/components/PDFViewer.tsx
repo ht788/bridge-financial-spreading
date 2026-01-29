@@ -21,6 +21,20 @@ export const PDFViewer: React.FC<PDFViewerProps> = ({ pdfUrl }) => {
     setPageNumber(1);
   }
 
+  // Handle missing PDF URL
+  if (!pdfUrl) {
+    return (
+      <div className="flex flex-col h-full bg-gray-100 items-center justify-center">
+        <div className="text-gray-500 text-center p-8">
+          <div className="text-lg font-medium mb-2">No PDF file specified</div>
+          <div className="text-sm text-gray-400">
+            The document preview is not available for this file type.
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   const changePage = (offset: number) => {
     setPageNumber((prevPageNumber) => Math.max(1, Math.min(prevPageNumber + offset, numPages)));
   };

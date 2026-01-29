@@ -17,6 +17,21 @@ from typing import Optional, List, Dict, Any
 from pydantic import BaseModel, Field
 
 
+class BreakdownItem(BaseModel):
+    """
+    A sub-component of a line item, representing one part of an aggregated total.
+    
+    For example, if Revenue = $6,516,729 is composed of Product Sales, Digital Sales,
+    Shipping, and Returns, each of those would be a BreakdownItem.
+    """
+    label: str = Field(
+        description="The exact label from the source document (e.g., 'Product Sales', 'Digital Sales (App)')"
+    )
+    value: float = Field(
+        description="The dollar amount for this sub-item"
+    )
+
+
 class LineItem(BaseModel):
     """
     Reusable model for a single financial line item.
@@ -48,6 +63,13 @@ class LineItem(BaseModel):
         default=None,
         description="The section header or category under which this item was found "
                     "(e.g., 'Operating Expenses', 'Current Assets'). Helps with validation."
+    )
+    
+    breakdown: Optional[List[BreakdownItem]] = Field(
+        default=None,
+        description="Optional breakdown of sub-items that compose this line item's total. "
+                    "Populated when the document shows multiple line items summing to a total "
+                    "(e.g., Revenue composed of Product Sales, Digital Sales, Returns, etc.)."
     )
 
 
@@ -223,7 +245,7 @@ class BalanceSheet(BaseModel):
     # --- Non-Current Assets ---
     ppe_gross: LineItem = Field(
         default_factory=LineItem,
-        description="Property, Plant & Equipment at gross/cost."
+        description="PP&E Gross - Property, Plant & Equipment at gross/cost."
     )
     
     accumulated_depreciation: LineItem = Field(
@@ -233,12 +255,12 @@ class BalanceSheet(BaseModel):
     
     ppe_net: LineItem = Field(
         default_factory=LineItem,
-        description="Net PP&E = Gross PP&E - Accumulated Depreciation."
+        description="PP&E Net - Net PP&E = Gross PP&E - Accumulated Depreciation."
     )
     
     intangible_assets: LineItem = Field(
         default_factory=LineItem,
-        description="Intangible assets (patents, trademarks, etc.)."
+        description="Gross Intangible Assets (patents, trademarks, etc.)."
     )
     
     goodwill: LineItem = Field(

@@ -1,8 +1,8 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import { 
   CheckCircle, XCircle, AlertCircle, MinusCircle, 
   ChevronDown, FileText, Clock, Target, BarChart3,
-  Maximize2, Minimize2, Eye, AlertTriangle
+  Maximize2, Minimize2, Eye, AlertTriangle, ChevronRight
 } from 'lucide-react';
 import { PDFViewer } from '../PDFViewer';
 import { API_BASE_URL } from '../../api';
@@ -17,6 +17,109 @@ import {
   formatScore,
   formatDuration
 } from '../../testingTypes';
+import clsx from 'clsx';
+
+// Section definitions for grouping fields
+const INCOME_STATEMENT_SECTIONS = [
+  {
+    title: 'Revenue & Gross Profit',
+    fields: ['revenue', 'cogs', 'gross_profit'],
+  },
+  {
+    title: 'Operating Expenses',
+    fields: [
+      'sga',
+      'research_and_development',
+      'depreciation_amortization',
+      'other_operating_expenses',
+      'total_operating_expenses',
+    ],
+  },
+  {
+    title: 'Operating Income',
+    fields: ['operating_income'],
+  },
+  {
+    title: 'Non-Operating Items',
+    fields: ['interest_expense', 'interest_income', 'other_income_expense'],
+  },
+  {
+    title: 'Net Income',
+    fields: ['pretax_income', 'income_tax_expense', 'net_income'],
+  },
+];
+
+const BALANCE_SHEET_SECTIONS = [
+  {
+    title: 'Current Assets',
+    fields: [
+      'cash_and_equivalents',
+      'short_term_investments',
+      'accounts_receivable',
+      'inventory',
+      'prepaid_expenses',
+      'other_current_assets',
+      'total_current_assets',
+    ],
+  },
+  {
+    title: 'Non-Current Assets',
+    fields: [
+      'ppe_gross',
+      'accumulated_depreciation',
+      'ppe_net',
+      'intangible_assets',
+      'goodwill',
+      'long_term_investments',
+      'other_non_current_assets',
+      'total_non_current_assets',
+    ],
+  },
+  {
+    title: 'Total Assets',
+    fields: ['total_assets'],
+  },
+  {
+    title: 'Current Liabilities',
+    fields: [
+      'accounts_payable',
+      'short_term_debt',
+      'accrued_expenses',
+      'deferred_revenue_current',
+      'other_current_liabilities',
+      'total_current_liabilities',
+    ],
+  },
+  {
+    title: 'Non-Current Liabilities',
+    fields: [
+      'long_term_debt',
+      'deferred_tax_liabilities',
+      'pension_liabilities',
+      'other_non_current_liabilities',
+      'total_non_current_liabilities',
+    ],
+  },
+  {
+    title: 'Total Liabilities',
+    fields: ['total_liabilities'],
+  },
+  {
+    title: "Shareholders' Equity",
+    fields: [
+      'common_stock',
+      'additional_paid_in_capital',
+      'retained_earnings',
+      'treasury_stock',
+      'accumulated_other_comprehensive_income',
+      'total_shareholders_equity',
+    ],
+  },
+  {
+    title: 'Total Liabilities & Equity',
+    fields: ['total_liabilities_and_equity'],
+  },
+];
 
 interface TestResultsComparisonProps {
   result: TestRunResult;
@@ -28,8 +131,65 @@ export const TestResultsComparison: React.FC<TestResultsComparisonProps> = ({ re
   const [expandedFields, setExpandedFields] = useState<Set<string>>(new Set());
   const [showPdf, setShowPdf] = useState(true);
 
+  const [expandedSections, setExpandedSections] = useState<Set<string>>(new Set());
+
   const selectedFile = result.file_results[selectedFileIndex];
   const selectedPeriod = selectedFile?.periods[selectedPeriodIndex];
+
+  // Group fields by section
+  const groupedFields = useMemo(() => {
+    if (!selectedPeriod || !selectedFile) return [];
+
+    const sections = selectedFile.doc_type === 'income' 
+      ? INCOME_STATEMENT_SECTIONS 
+      : BALANCE_SHEET_SECTIONS;
+    
+    const fieldMap = new Map(selectedPeriod.field_comparisons.map(f => [f.field_name, f]));
+    const usedFields = new Set<string>();
+
+    const grouped = sections.map(section => {
+      const sectionFields = section.fields
+        .map(fieldName => {
+          const field = fieldMap.get(fieldName);
+          if (field) usedFields.add(fieldName);
+          return field;
+        })
+        .filter((f): f is FieldComparison => f !== undefined);
+
+      return {
+        title: section.title,
+        fields: sectionFields
+      };
+    }).filter(group => group.fields.length > 0);
+
+    // Add any remaining fields to an "Other" section
+    const remainingFields = selectedPeriod.field_comparisons.filter(f => !usedFields.has(f.field_name));
+    if (remainingFields.length > 0) {
+      grouped.push({
+        title: 'Other Items',
+        fields: remainingFields
+      });
+    }
+
+    return grouped;
+  }, [selectedPeriod, selectedFile]);
+
+  // Initialize all sections as expanded when period changes
+  React.useEffect(() => {
+    if (groupedFields.length > 0) {
+      setExpandedSections(new Set(groupedFields.map(g => g.title)));
+    }
+  }, [groupedFields]);
+
+  const toggleSection = (title: string) => {
+    const newExpanded = new Set(expandedSections);
+    if (newExpanded.has(title)) {
+      newExpanded.delete(title);
+    } else {
+      newExpanded.add(title);
+    }
+    setExpandedSections(newExpanded);
+  };
 
   const toggleField = (fieldName: string) => {
     const newExpanded = new Set(expandedFields);
@@ -42,6 +202,9 @@ export const TestResultsComparison: React.FC<TestResultsComparisonProps> = ({ re
   };
 
   const pdfUrl = selectedFile ? `${API_BASE_URL}/testing/files/${selectedFile.filename}` : '';
+  
+  // Check if file is a PDF (vs Excel which can't be previewed)
+  const isPdfFile = selectedFile?.filename.toLowerCase().endsWith('.pdf');
 
   return (
     <div className="flex flex-col h-[calc(100vh-140px)]">
@@ -110,7 +273,7 @@ export const TestResultsComparison: React.FC<TestResultsComparisonProps> = ({ re
 
       {/* Main Content Area - Split View */}
       <div className="flex-1 flex overflow-hidden gap-4 min-h-0">
-        {/* Left Pane: PDF Viewer */}
+        {/* Left Pane: Document Viewer */}
         {showPdf && selectedFile && (
            <div className="flex-1 bg-white border border-gray-200 rounded-xl overflow-hidden flex flex-col shadow-sm">
               <div className="px-3 py-2 border-b border-gray-200 flex justify-between items-center bg-gray-50">
@@ -119,17 +282,33 @@ export const TestResultsComparison: React.FC<TestResultsComparisonProps> = ({ re
                     <span className="font-medium text-sm text-gray-700 truncate max-w-[300px]" title={selectedFile.filename}>
                       {selectedFile.filename}
                     </span>
+                    {!isPdfFile && (
+                      <span className="text-xs px-1.5 py-0.5 rounded bg-blue-100 text-blue-700">
+                        Excel
+                      </span>
+                    )}
                  </div>
                  <button 
                    onClick={() => setShowPdf(false)}
                    className="p-1 hover:bg-gray-200 rounded text-gray-500 transition-colors"
-                   title="Hide PDF"
+                   title="Hide preview"
                  >
                    <Minimize2 className="w-4 h-4" />
                  </button>
               </div>
               <div className="flex-1 overflow-hidden relative">
-                 <PDFViewer pdfUrl={pdfUrl} />
+                 {isPdfFile ? (
+                   <PDFViewer pdfUrl={pdfUrl} />
+                 ) : (
+                   <div className="flex flex-col items-center justify-center h-full bg-gray-50 text-gray-500">
+                     <FileText className="w-16 h-16 mb-4 text-gray-300" />
+                     <p className="text-lg font-medium text-gray-600">Excel File</p>
+                     <p className="text-sm mt-1">Preview not available for Excel files</p>
+                     <p className="text-xs mt-3 text-gray-400 max-w-xs text-center">
+                       The test extracts data from the Excel spreadsheet using text-based processing
+                     </p>
+                   </div>
+                 )}
               </div>
            </div>
         )}
@@ -254,14 +433,37 @@ export const TestResultsComparison: React.FC<TestResultsComparisonProps> = ({ re
                       </div>
 
                       {/* Field Comparisons */}
-                      <div className="flex-1 overflow-y-auto divide-y divide-gray-100">
-                        {selectedPeriod.field_comparisons.map((comparison, idx) => (
-                          <FieldComparisonRow 
-                            key={idx} 
-                            comparison={comparison}
-                            isExpanded={expandedFields.has(comparison.field_name)}
-                            onToggle={() => toggleField(comparison.field_name)}
-                          />
+                      <div className="flex-1 overflow-y-auto bg-white">
+                        {groupedFields.map((section) => (
+                          <div key={section.title} className="border-b border-gray-100 last:border-0">
+                            <button
+                              onClick={() => toggleSection(section.title)}
+                              className="w-full px-4 py-2 bg-gray-50/50 flex items-center justify-between hover:bg-gray-100/50 transition-colors"
+                            >
+                              <span className="text-xs font-semibold text-gray-500 uppercase tracking-wider">
+                                {section.title}
+                              </span>
+                              <ChevronDown 
+                                className={`w-4 h-4 text-gray-400 transition-transform duration-200 ${
+                                  expandedSections.has(section.title) ? 'rotate-180' : ''
+                                }`} 
+                              />
+                            </button>
+                            
+                            {expandedSections.has(section.title) && (
+                              <div className="divide-y divide-gray-100">
+                                {section.fields.map((comparison, idx) => (
+                                  <FieldComparisonRow 
+                                    key={idx} 
+                                    comparison={comparison}
+                                    isExpanded={expandedFields.has(comparison.field_name)}
+                                    onToggle={() => toggleField(comparison.field_name)}
+                                    isTotalLine={comparison.field_name.includes('total') || comparison.field_name.includes('net_income')}
+                                  />
+                                ))}
+                              </div>
+                            )}
+                          </div>
                         ))}
                       </div>
                     </div>
@@ -287,16 +489,18 @@ interface FieldComparisonRowProps {
   comparison: FieldComparison;
   isExpanded: boolean;
   onToggle: () => void;
+  isTotalLine?: boolean;
 }
 
 const FieldComparisonRow: React.FC<FieldComparisonRowProps> = ({ 
   comparison, 
   isExpanded, 
-  onToggle 
+  onToggle,
+  isTotalLine
 }) => {
   const formatValue = (value: number | null): string => {
     if (value === null) return '—';
-    return value.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    return value.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 });
   };
 
   const getStatusIcon = () => {
@@ -319,7 +523,7 @@ const FieldComparisonRow: React.FC<FieldComparisonRowProps> = ({
   };
 
   return (
-    <div className="hover:bg-gray-50 transition-colors">
+    <div className={`hover:bg-gray-50 transition-colors ${isTotalLine ? 'bg-gray-50/30' : ''}`}>
       <button
         onClick={onToggle}
         className="w-full px-4 py-2.5 flex items-center gap-3 text-left group"
@@ -328,7 +532,7 @@ const FieldComparisonRow: React.FC<FieldComparisonRowProps> = ({
         
         <div className="flex-1 min-w-0">
           <div className="flex items-center justify-between mb-0.5">
-            <div className="font-medium text-gray-900 text-sm truncate pr-2" title={comparison.field_name}>
+            <div className={`text-sm truncate pr-2 ${isTotalLine ? 'font-bold text-gray-900' : 'font-medium text-gray-700'}`} title={comparison.field_name}>
               {comparison.field_name.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase())}
             </div>
             <span className={`text-[10px] px-1.5 py-0.5 rounded uppercase font-semibold ${getAccuracyColor(comparison.accuracy)}`}>
@@ -338,17 +542,19 @@ const FieldComparisonRow: React.FC<FieldComparisonRowProps> = ({
           
           <div className="flex items-center justify-between text-xs font-mono">
             <div className="flex items-center gap-2">
-              <span className="text-gray-500">Exp:</span>
-              <span className="text-gray-900">{formatValue(comparison.expected_value)}</span>
+              <span className="text-gray-400">Exp:</span>
+              <span className={`text-gray-900 ${isTotalLine ? 'font-semibold' : ''}`}>{formatValue(comparison.expected_value)}</span>
             </div>
             <div className="flex items-center gap-2">
-              <span className="text-gray-500">Got:</span>
-              <span className={comparison.accuracy === 'exact' || comparison.accuracy === 'tolerance' 
-                ? 'text-emerald-600 font-medium' 
-                : comparison.accuracy === 'partial' 
-                  ? 'text-yellow-600 font-medium' 
-                  : 'text-red-600 font-medium'
-              }>
+              <span className="text-gray-400">Got:</span>
+              <span className={clsx(
+                isTotalLine ? 'font-bold' : 'font-medium',
+                comparison.accuracy === 'exact' || comparison.accuracy === 'tolerance' 
+                  ? 'text-emerald-600' 
+                  : comparison.accuracy === 'partial' 
+                    ? 'text-yellow-600' 
+                    : 'text-red-600'
+              )}>
                 {formatValue(comparison.extracted_value)}
               </span>
             </div>

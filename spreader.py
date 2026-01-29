@@ -31,6 +31,7 @@ Architecture:
 import logging
 import os
 import asyncio
+import concurrent.futures
 from typing import Optional, Union, List, Any, Tuple
 from dataclasses import dataclass
 from pathlib import Path
@@ -86,7 +87,9 @@ from utils import (
     create_image_content_block,
     create_vision_message_content,
     estimate_token_count,
-    excel_to_markdown
+    excel_to_markdown,
+    excel_to_csv_sections,
+    detect_statement_type_from_sheet,
 )
 from model_config import (
     get_model_by_id,
@@ -101,6 +104,41 @@ logger = logging.getLogger(__name__)
 
 # Global flag to track if fallback prompt was used during extraction
 _fallback_prompt_used = False
+
+
+def _run_async_safely(coro):
+    """
+    Run an async coroutine from a sync context, handling the case where
+    we're already inside an event loop (e.g., FastAPI).
+    
+    This is necessary because asyncio.run() cannot be called from within
+    a running event loop. When called from FastAPI or other async frameworks,
+    we need to run the coroutine in a separate thread with its own event loop.
+    
+    Args:
+        coro: The coroutine to run
+        
+    Returns:
+        The result of the coroutine
+    """
+    try:
+        # Check if we're already in an event loop
+        loop = asyncio.get_running_loop()
+    except RuntimeError:
+        # No running loop - safe to use asyncio.run()
+        return asyncio.run(coro)
+    
+    # We're inside an event loop (e.g., FastAPI)
+    # Run the coroutine in a separate thread with its own event loop
+    logger.debug("Running async code from within existing event loop using thread executor")
+    
+    def run_in_thread():
+        return asyncio.run(coro)
+    
+    with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
+        future = executor.submit(run_in_thread)
+        return future.result()
+
 
 def reset_fallback_flag():
     """Reset the fallback prompt flag before a new extraction."""
@@ -1360,7 +1398,50 @@ No exceptions. Same row label = same schema field across all periods.
 - confidence: 0.0 for null values
 - raw_fields_used: ["NOT FOUND: field_name not present in document for this period"]
 
-Never guess values. Only extract what is explicitly shown."""
+Never guess values. Only extract what is explicitly shown.
+
+## BREAKDOWN EXTRACTION (Sub-Account Detail)
+
+When a schema field (e.g., revenue, cogs, sga) is computed by summing multiple document line items, 
+populate the `breakdown` array with those sub-components:
+
+RULES:
+- Only include breakdowns when the document explicitly shows sub-items that sum to a total
+- Each breakdown item needs a `label` (exact text from document) and `value` (the dollar amount)
+- Sub-items should be in document order (top to bottom as they appear)
+- Include ALL sub-items that contribute to the total, including negative items (returns, refunds, credits)
+- Do NOT create breakdowns for single-value fields (leave breakdown as null)
+- Breakdowns are OPTIONAL - only populate when clearly present in the document
+
+EXAMPLE: If the document shows:
+  Revenue
+    Product Sales         $6,854,718
+    Digital Sales (App)      $42,467
+    Shipping & Handling      $89,900
+    Returns and Refunds   ($470,356)
+  Total Revenue          $6,516,729
+
+Extract as:
+{{
+  "revenue": {{
+    "value": 6516729,
+    "confidence": 0.95,
+    "raw_fields_used": ["Total Revenue: $6,516,729"],
+    "breakdown": [
+      {{"label": "Product Sales", "value": 6854718}},
+      {{"label": "Digital Sales (App)", "value": 42467}},
+      {{"label": "Shipping & Handling", "value": 89900}},
+      {{"label": "Returns and Refunds", "value": -470356}}
+    ]
+  }}
+}}
+
+COMMON FIELDS WITH BREAKDOWNS:
+- revenue: Often has Product Sales, Service Revenue, Returns, Discounts
+- cogs: Often has Material Costs, Labor, Freight, Amazon Fees
+- sga: Often has multiple expense categories (Marketing, Wages, Rent, etc.)
+- long_term_debt: Often has multiple loan types
+- short_term_debt: Often has Credit Cards, Lines of Credit"""
 
 
 @traceable(
@@ -1511,7 +1592,7 @@ def spread_pdf(
     model_override: Optional[str] = None,
     extended_thinking: bool = False,
     max_pages: Optional[int] = None,
-    dpi: int = 200,
+    dpi: int = 150,
     max_retries: int = 1,
     validation_tolerance: float = 0.05
 ) -> Union[IncomeStatement, BalanceSheet]:
@@ -1537,7 +1618,7 @@ def spread_pdf(
         model_override: Override model (testing only)
         extended_thinking: Enable extended thinking for Anthropic models (default False)
         max_pages: Maximum pages to process
-        dpi: Image resolution for PDF conversion
+        dpi: Image resolution for PDF conversion (default 150 - optimized for speed while preserving number readability)
         max_retries: Maximum retry attempts on validation failure
         validation_tolerance: Tolerance for math validation (default 5%)
         
@@ -1758,7 +1839,7 @@ def spread_pdf_multi_period(
     model_override: Optional[str] = None,
     extended_thinking: bool = False,
     max_pages: Optional[int] = None,
-    dpi: int = 200,
+    dpi: int = 150,
     max_retries: int = 1,
     validation_tolerance: float = 0.05,
     _preconverted_images: Optional[List[tuple]] = None,
@@ -1786,7 +1867,7 @@ def spread_pdf_multi_period(
         model_override: Override model (testing only)
         extended_thinking: Enable extended thinking for Anthropic models (default False)
         max_pages: Maximum pages to process
-        dpi: Image resolution for PDF conversion
+        dpi: Image resolution for PDF conversion (default 150 - optimized for speed while preserving number readability)
         max_retries: Maximum retry attempts on validation failure
         validation_tolerance: Tolerance for math validation (default 5%)
         _preconverted_images: Internal use - pre-converted images to avoid duplicate conversion
@@ -2028,7 +2109,7 @@ async def spread_pdf_combined(
     model_override: Optional[str] = None,
     extended_thinking: bool = False,
     max_pages: Optional[int] = None,
-    dpi: int = 200,
+    dpi: int = 150,
     max_retries: int = 1,
     validation_tolerance: float = 0.05,
 ) -> CombinedFinancialExtraction:
@@ -2318,6 +2399,572 @@ async def spread_pdf_combined(
     return result
 
 
+# =============================================================================
+# EXCEL PROCESSING
+# =============================================================================
+
+def _get_excel_model_config(
+    model_override: Optional[str],
+    extended_thinking: bool
+) -> Tuple[str, dict]:
+    """
+    Get model configuration for Excel processing.
+    
+    Extracted as helper to avoid duplication between sync and async functions.
+    """
+    if model_override:
+        model_name = model_override
+        model_kwargs = {}
+        if any(x in model_override.lower() for x in ["gpt-5", "o1", "o3"]):
+            model_kwargs["reasoning_effort"] = os.getenv("OPENAI_REASONING_EFFORT", "high")
+        if "claude" in model_override.lower() and extended_thinking:
+            model_kwargs["extended_thinking"] = True
+    else:
+        # Use income statement prompt for model config
+        prompt, hub_model_config = load_from_hub("income")
+        if hub_model_config and hub_model_config.get("model"):
+            model_name = hub_model_config["model"]
+            model_kwargs = {}
+            if hub_model_config.get("reasoning_effort"):
+                reasoning = hub_model_config["reasoning_effort"]
+                valid_efforts = ["low", "medium", "high"]
+                if reasoning not in valid_efforts:
+                    reasoning = "medium"
+                if "gpt-5.2" in model_name.lower() and reasoning != "medium":
+                    reasoning = "medium"
+                model_kwargs["reasoning_effort"] = reasoning
+            if "claude" in model_name.lower() and extended_thinking:
+                model_kwargs["extended_thinking"] = True
+        else:
+            model_name, model_kwargs = get_model_config_from_environment()
+            if "claude" in model_name.lower() and extended_thinking:
+                model_kwargs["extended_thinking"] = True
+    
+    return model_name, model_kwargs
+
+
+def _detect_excel_sheet_types(csv_content: str) -> Tuple[List[str], List[str]]:
+    """
+    Detect which sheets contain Income Statement vs Balance Sheet data.
+    
+    Returns:
+        Tuple of (income_sheets, balance_sheets)
+    """
+    income_sheets = []
+    balance_sheets = []
+    
+    # Parse CSV content back into sections for detection
+    sections = csv_content.split("\n\n=== SHEET: ")
+    for section in sections:
+        if not section.strip():
+            continue
+        # Extract sheet name from section header
+        if section.startswith("=== SHEET: "):
+            section = section[11:]  # Remove prefix
+        
+        if " ===" in section:
+            sheet_name = section.split(" ===")[0]
+            sheet_csv = section.split(" ===\n", 1)[1] if " ===\n" in section else ""
+        else:
+            # First section doesn't have the prefix stripped
+            parts = section.split(" ===\n", 1)
+            sheet_name = parts[0]
+            sheet_csv = parts[1] if len(parts) > 1 else ""
+        
+        detected_type = detect_statement_type_from_sheet(sheet_name, sheet_csv)
+        
+        if detected_type == 'income':
+            income_sheets.append(sheet_name)
+            logger.info(f"[EXCEL] Sheet '{sheet_name}' detected as Income Statement")
+        elif detected_type == 'balance':
+            balance_sheets.append(sheet_name)
+            logger.info(f"[EXCEL] Sheet '{sheet_name}' detected as Balance Sheet")
+        else:
+            logger.debug(f"[EXCEL] Sheet '{sheet_name}' type unclear, will include in extraction")
+    
+    return income_sheets, balance_sheets
+
+
+@traceable(
+    name="spread_excel_combined",
+    tags=["pipeline", "financial-spreading", "excel", "combined", "parallel"],
+    metadata={"version": "2.0", "operation": "spread_excel_combined"}
+)
+async def spread_excel_combined(
+    excel_path: str,
+    model_override: Optional[str] = None,
+    extended_thinking: bool = False,
+    max_retries: int = 1,
+    validation_tolerance: float = 0.05,
+) -> CombinedFinancialExtraction:
+    """
+    Auto-detect statement types in Excel and extract all found statements in PARALLEL.
+    
+    This function:
+    1. Converts Excel to CSV (once)
+    2. Detects which statement types are present (income statement, balance sheet, or both)
+    3. Extracts detected statements in PARALLEL (if both present)
+    4. Returns combined results
+    
+    PERFORMANCE:
+    - When both IS and BS are present, parallel extraction reduces total time by ~50%
+    - CSV content is converted once and shared between extractions
+    
+    Args:
+        excel_path: Path to the Excel file (.xlsx, .xls, .xlsm)
+        model_override: Override model (testing only)
+        extended_thinking: Enable extended thinking for Anthropic models
+        max_retries: Maximum retry attempts on validation failure
+        validation_tolerance: Tolerance for math validation (default 5%)
+        
+    Returns:
+        CombinedFinancialExtraction with both statement types (if found)
+    """
+    start_time = datetime.now()
+    
+    # Add custom metadata to the current trace
+    try:
+        run_tree = get_current_run_tree()
+        if run_tree:
+            run_tree.add_metadata({
+                "excel_path": excel_path,
+                "doc_type": "auto",
+                "mode": "excel-combined-parallel",
+            })
+    except Exception:
+        pass
+    
+    # -------------------------------------------------------------------------
+    # STEP 1: Convert Excel to CSV sections (done once)
+    # -------------------------------------------------------------------------
+    logger.info(f"[EXCEL-COMBINED] Processing Excel file: {excel_path}")
+    
+    csv_content, sheet_names = excel_to_csv_sections(excel_path)
+    
+    logger.info(f"[EXCEL-COMBINED] Found {len(sheet_names)} sheets: {sheet_names}")
+    
+    # Estimate tokens (roughly 1 token per 4 characters for text)
+    estimated_tokens = len(csv_content) // 4
+    logger.info(f"[EXCEL-COMBINED] CSV content: {len(csv_content)} chars, ~{estimated_tokens} tokens")
+    
+    # -------------------------------------------------------------------------
+    # STEP 2: Get Model Configuration
+    # -------------------------------------------------------------------------
+    model_name, model_kwargs = _get_excel_model_config(model_override, extended_thinking)
+    logger.info(f"[EXCEL-COMBINED] Using model: {model_name}")
+    
+    # -------------------------------------------------------------------------
+    # STEP 3: Detect statement types from sheet names/content
+    # -------------------------------------------------------------------------
+    logger.info("[EXCEL-COMBINED] Auto-detecting statement types from sheets...")
+    income_sheets, balance_sheets = _detect_excel_sheet_types(csv_content)
+    
+    # -------------------------------------------------------------------------
+    # STEP 4: Extract statements - PARALLEL when both present
+    # -------------------------------------------------------------------------
+    income_result = None
+    balance_result = None
+    extraction_errors: List[str] = []
+    
+    should_extract_income = income_sheets or not balance_sheets
+    should_extract_balance = balance_sheets or not income_sheets
+    
+    if should_extract_income and should_extract_balance:
+        # PARALLEL EXTRACTION - run both in parallel using asyncio
+        logger.info("[EXCEL-COMBINED] Both statement types detected - running PARALLEL extraction")
+        
+        # Run both extractions in parallel using asyncio.to_thread for sync functions
+        income_task = asyncio.to_thread(
+            _extract_excel_statement,
+            csv_content,
+            "income",
+            model_name,
+            model_kwargs,
+            validation_tolerance,
+        )
+        balance_task = asyncio.to_thread(
+            _extract_excel_statement,
+            csv_content,
+            "balance",
+            model_name,
+            model_kwargs,
+            validation_tolerance,
+        )
+        
+        # Gather results
+        results = await asyncio.gather(income_task, balance_task, return_exceptions=True)
+        
+        # Process results
+        if isinstance(results[0], Exception):
+            logger.error(f"[EXCEL-COMBINED] Income statement extraction failed: {results[0]}")
+            extraction_errors.append(f"Income statement: {str(results[0])}")
+        else:
+            income_result = results[0]
+        
+        if isinstance(results[1], Exception):
+            logger.error(f"[EXCEL-COMBINED] Balance sheet extraction failed: {results[1]}")
+            extraction_errors.append(f"Balance sheet: {str(results[1])}")
+        else:
+            balance_result = results[1]
+    
+    elif should_extract_income:
+        # SINGLE EXTRACTION - Income Statement only
+        logger.info("[EXCEL-COMBINED] Only income statement detected - extracting...")
+        try:
+            income_result = _extract_excel_statement(
+                csv_content=csv_content,
+                doc_type="income",
+                model_name=model_name,
+                model_kwargs=model_kwargs,
+                validation_tolerance=validation_tolerance,
+            )
+        except Exception as e:
+            logger.error(f"[EXCEL-COMBINED] Income statement extraction failed: {e}")
+            extraction_errors.append(f"Income statement: {str(e)}")
+    
+    elif should_extract_balance:
+        # SINGLE EXTRACTION - Balance Sheet only
+        logger.info("[EXCEL-COMBINED] Only balance sheet detected - extracting...")
+        try:
+            balance_result = _extract_excel_statement(
+                csv_content=csv_content,
+                doc_type="balance",
+                model_name=model_name,
+                model_kwargs=model_kwargs,
+                validation_tolerance=validation_tolerance,
+            )
+        except Exception as e:
+            logger.error(f"[EXCEL-COMBINED] Balance sheet extraction failed: {e}")
+            extraction_errors.append(f"Balance sheet: {str(e)}")
+    
+    execution_time = (datetime.now() - start_time).total_seconds()
+    
+    # -------------------------------------------------------------------------
+    # STEP 5: Build result
+    # -------------------------------------------------------------------------
+    detection = StatementTypeDetection(
+        has_income_statement=income_result is not None,
+        has_balance_sheet=balance_result is not None,
+        income_statement_pages=income_sheets if income_sheets else [],
+        balance_sheet_pages=balance_sheets if balance_sheets else [],
+        confidence=0.9 if (income_sheets or balance_sheets) else 0.5,
+        notes=f"Detected from Excel sheets: IS={income_sheets}, BS={balance_sheets}"
+    )
+    
+    metadata = {
+        "execution_time_seconds": execution_time,
+        "model": model_name,
+        "sheets_processed": sheet_names,
+        "estimated_tokens": estimated_tokens,
+        "source_type": "excel",
+        "parallel_extraction": should_extract_income and should_extract_balance,
+    }
+    if extraction_errors:
+        metadata["extraction_errors"] = extraction_errors
+    
+    result = CombinedFinancialExtraction(
+        income_statement=income_result,
+        balance_sheet=balance_result,
+        detected_types=detection,
+        extraction_metadata=metadata,
+    )
+    
+    logger.info(
+        f"[EXCEL-COMBINED] Extraction complete in {execution_time:.2f}s "
+        f"({'parallel' if metadata['parallel_extraction'] else 'sequential'}). "
+        f"Income Statement: {'Yes' if income_result else 'No'}, "
+        f"Balance Sheet: {'Yes' if balance_result else 'No'}"
+    )
+    
+    return result
+
+
+@traceable(
+    name="spread_excel_multi_period",
+    tags=["pipeline", "financial-spreading", "excel", "multi-sheet"],
+    metadata={"version": "2.0", "operation": "spread_excel"}
+)
+def spread_excel_multi_period(
+    excel_path: str,
+    doc_type: str,
+    model_override: Optional[str] = None,
+    extended_thinking: bool = False,
+    max_retries: int = 1,
+    validation_tolerance: float = 0.05,
+) -> Union[MultiPeriodIncomeStatement, MultiPeriodBalanceSheet]:
+    """
+    Process a multi-worksheet Excel file and extract a SPECIFIC statement type.
+    
+    For auto-detection with parallel IS+BS extraction, use spread_excel_combined() instead.
+    
+    ARCHITECTURE:
+    1. TEXT-BASED: Excel → CSV text → LLM (no vision needed)
+    2. MULTI-SHEET: All worksheets are combined with clear section headers
+    3. STRUCTURED OUTPUT: Same Pydantic schemas as PDF processing
+    
+    ADVANTAGES OVER PDF:
+    - No image conversion needed (faster, cheaper)
+    - Data is already structured (more reliable)
+    - Lower token usage (text vs images)
+    
+    Args:
+        excel_path: Path to the Excel file (.xlsx, .xls, .xlsm)
+        doc_type: 'income' or 'balance' (use spread_excel_combined for 'auto')
+        model_override: Override model (testing only)
+        extended_thinking: Enable extended thinking for Anthropic models
+        max_retries: Maximum retry attempts on validation failure
+        validation_tolerance: Tolerance for math validation (default 5%)
+        
+    Returns:
+        MultiPeriodIncomeStatement or MultiPeriodBalanceSheet
+    """
+    start_time = datetime.now()
+    
+    # Add custom metadata to the current trace
+    try:
+        run_tree = get_current_run_tree()
+        if run_tree:
+            run_tree.add_metadata({
+                "excel_path": excel_path,
+                "doc_type": doc_type,
+                "mode": "excel-multi-sheet",
+            })
+    except Exception:
+        pass
+    
+    # -------------------------------------------------------------------------
+    # STEP 1: Convert Excel to CSV sections
+    # -------------------------------------------------------------------------
+    logger.info(f"[EXCEL] Processing Excel file: {excel_path}")
+    
+    csv_content, sheet_names = excel_to_csv_sections(excel_path)
+    
+    logger.info(f"[EXCEL] Found {len(sheet_names)} sheets: {sheet_names}")
+    
+    # Estimate tokens (roughly 1 token per 4 characters for text)
+    estimated_tokens = len(csv_content) // 4
+    logger.info(f"[EXCEL] CSV content: {len(csv_content)} chars, ~{estimated_tokens} tokens")
+    
+    # -------------------------------------------------------------------------
+    # STEP 2: Get Model Configuration
+    # -------------------------------------------------------------------------
+    model_name, model_kwargs = _get_excel_model_config(model_override, extended_thinking)
+    logger.info(f"[EXCEL] Using model: {model_name}")
+    
+    # -------------------------------------------------------------------------
+    # STEP 3: Extract specific statement type
+    # -------------------------------------------------------------------------
+    result = _extract_excel_statement(
+        csv_content=csv_content,
+        doc_type=doc_type,
+        model_name=model_name,
+        model_kwargs=model_kwargs,
+        validation_tolerance=validation_tolerance,
+    )
+    
+    execution_time = (datetime.now() - start_time).total_seconds()
+    logger.info(f"[EXCEL] Extraction complete in {execution_time:.2f}s")
+    
+    return result
+
+
+@traceable(
+    name="extract_excel_statement",
+    tags=["llm", "extraction", "excel"],
+    metadata={"operation": "excel_extraction"}
+)
+def _extract_excel_statement(
+    csv_content: str,
+    doc_type: str,
+    model_name: str,
+    model_kwargs: Optional[dict] = None,
+    validation_tolerance: float = 0.05,
+) -> Union[MultiPeriodIncomeStatement, MultiPeriodBalanceSheet]:
+    """
+    Extract a single statement type from Excel CSV content.
+    
+    Args:
+        csv_content: Combined CSV content from all sheets
+        doc_type: 'income' or 'balance'
+        model_name: Model to use for extraction
+        model_kwargs: Additional model parameters
+        validation_tolerance: Tolerance for math validation
+        
+    Returns:
+        MultiPeriodIncomeStatement or MultiPeriodBalanceSheet
+    """
+    # Get the extraction schema
+    extraction_schema = get_multi_period_extraction_schema(doc_type)
+    
+    # Create LLM with structured output
+    llm = create_llm(model_name=model_name, model_kwargs=model_kwargs)
+    structured_llm = llm.with_structured_output(extraction_schema)
+    
+    # Build the system prompt for Excel extraction
+    system_prompt = _get_excel_extraction_system_prompt(doc_type)
+    
+    # Build the human message with the CSV data
+    human_prompt = f"""Analyze the following Excel spreadsheet data (in CSV format) and extract {doc_type} statement data.
+
+The data contains multiple worksheets, each marked with "=== SHEET: Sheet Name ===" headers.
+
+IMPORTANT INSTRUCTIONS:
+1. Look at ALL sheets to find the {doc_type} statement data
+2. FIRST determine the data format:
+   - If columns are MONTHLY (Jan, Feb, Mar...) this is INTERIM data
+   - If columns are ANNUAL/QUARTERLY (2023, 2024, FY2025, Q4...) this is ANNUAL data
+3. For INTERIM/MONTHLY data:
+   - ONLY extract the "Total" or "YTD" column as a SINGLE period
+   - Label it with the fiscal year + YTD (e.g., "FY2026 YTD")
+   - For balance sheets, use the LATEST month column as the snapshot date
+4. For ANNUAL data:
+   - Extract EACH annual/quarterly period column
+5. Order periods from most recent (index 0) to oldest
+
+CSV DATA:
+{csv_content}
+
+Extract the {doc_type} statement data following the schema. For interim monthly data, extract ONLY the YTD total, not individual months."""
+
+    messages = [
+        SystemMessage(content=system_prompt),
+        HumanMessage(content=human_prompt),
+    ]
+    
+    # Configure tracing
+    config = get_runnable_config(
+        run_name=f"extract_excel_{doc_type}",
+        tags=[f"doc_type:{doc_type}", "excel-input", "text-based"],
+        metadata={
+            "csv_length": len(csv_content),
+            "schema": extraction_schema.__name__,
+        }
+    )
+    
+    # Invoke the LLM
+    logger.info(f"[EXCEL] Extracting {doc_type} statement from CSV data...")
+    result = structured_llm.invoke(messages, config=config)
+    
+    logger.info(f"[EXCEL] Extracted {len(result.periods)} periods")
+    
+    # Post-processing: standardize period labels
+    for period_data in result.periods:
+        original_label = period_data.period_label
+        standardized_label = standardize_period_label(original_label)
+        if standardized_label != original_label:
+            logger.info(f"[EXCEL] Standardized period label: '{original_label}' -> '{standardized_label}'")
+            period_data.period_label = standardized_label
+    
+    # Apply computed totals for income statements
+    if doc_type in ["income", "income_statement"]:
+        for period_data in result.periods:
+            period_data.data, corrections = apply_computed_totals(
+                period_data.data, 
+                tolerance=validation_tolerance
+            )
+            if corrections:
+                logger.info(f"[EXCEL] {period_data.period_label}: {corrections}")
+    
+    # Validate math for each period
+    for period_data in result.periods:
+        validation = validate_spread(period_data.data, tolerance=validation_tolerance)
+        if not validation.is_valid:
+            logger.warning(f"[EXCEL] Validation {period_data.period_label}: {validation.errors}")
+    
+    # Build the final multi-period result
+    currency = result.currency or 'USD'
+    scale = result.scale or 'units'
+    
+    if doc_type in ["income", "income_statement"]:
+        return MultiPeriodIncomeStatement(
+            periods=result.periods,
+            currency=currency,
+            scale=scale
+        )
+    else:
+        return MultiPeriodBalanceSheet(
+            periods=result.periods,
+            currency=currency,
+            scale=scale
+        )
+
+
+def _get_excel_extraction_system_prompt(doc_type: str) -> str:
+    """
+    Return system prompt for Excel-based extraction.
+    
+    Similar to vision prompts but optimized for structured CSV data.
+    """
+    return f"""You are a financial statement spreading expert extracting {doc_type} data from Excel spreadsheets.
+
+## INPUT FORMAT
+You will receive CSV data from an Excel file. Multiple worksheets are separated by "=== SHEET: Name ===" headers.
+The data is clean, structured, and already in tabular format (no OCR/image interpretation needed).
+
+## EXTRACTION PROTOCOL
+
+### STEP 1: IDENTIFY STATEMENT SHEETS
+Look at all sheets and identify which contain the {doc_type} statement data.
+Sheet names often indicate content (e.g., "Income Statement", "P&L", "Balance Sheet").
+
+### STEP 2: DETECT DATA FORMAT AND IDENTIFY PERIOD COLUMNS
+Financial statements come in TWO formats - detect which one you're dealing with:
+
+**FORMAT A - ANNUAL/QUARTERLY STATEMENTS:**
+- Columns have annual/quarterly labels: "FY2023", "2024", "Dec 31, 2024", "Q4 2024"
+- Each column represents a COMPLETE fiscal period
+- Extract EACH annual/quarterly column as a separate period
+
+**FORMAT B - INTERIM MONTHLY STATEMENTS:**
+- Columns have MONTHLY labels: "Jan-2025", "Feb-2025", "Mar-2025", "Nov-2024", etc.
+- There is typically a "Total" or "YTD" column that sums all months
+- DO NOT extract individual months as separate periods
+- ONLY extract the "Total" or "YTD" column as a SINGLE period labeled "FY[Year] YTD"
+- For balance sheets with monthly columns, extract the LATEST month as the balance sheet snapshot
+
+**HOW TO DETECT:**
+- If you see 6+ columns with consecutive monthly dates (Jan, Feb, Mar...), it's Format B (interim monthly)
+- If you see columns like "2023", "2024", "FY2024", it's Format A (annual)
+
+### STEP 3: MAP ROWS TO SCHEMA FIELDS
+For each row label in the CSV:
+- Map to the appropriate schema field
+- Apply the SAME mapping across ALL periods
+- Handle common variations (e.g., "Net Sales" = "revenue")
+
+### STEP 4: EXTRACT VALUES
+For each relevant period column:
+- Extract numerical values
+- Handle parentheses as negative: (100) = -100
+- Handle blank cells as null
+- Note any text/notes in raw_fields_used
+
+## FIELD MAPPING RULES
+
+REVENUE/SALES: "Revenue", "Net Sales", "Total Sales", "Total Revenue", "Net Revenue", "Gross Sales" minus "Sales Adjustments"
+COGS: "Cost of Goods Sold", "Cost of Sales", "COGS", "Cost of Revenue", "Cost of Goods Sold (Excl. Depr)"
+GROSS PROFIT: "Gross Profit", "Gross Margin" (ALWAYS extract if shown)
+SG&A: "SG&A", "Selling, General & Administrative", "Operating Expenses", "G&A", "SG&A (Excl. Depr)"
+DEPRECIATION: Sum of all depreciation/amortization lines if itemized separately
+TOTAL OPERATING EXPENSES: "Total Operating Expenses", "Total Expenses" (ALWAYS extract)
+OPERATING INCOME: "Operating Income", "Income from Operations", "EBIT"
+INTEREST EXPENSE: "Interest Expense", "Interest", "Finance Costs", "Interest expenses"
+NET INCOME: "Net Income", "Net Profit", "Net Loss", "Bottom Line"
+
+## OUTPUT REQUIREMENTS
+- For ANNUAL data: Extract ALL annual/quarterly periods found
+- For MONTHLY INTERIM data: Extract ONLY the Total/YTD as a single period (label it "FY[Year] YTD")
+- Order periods from most recent to oldest
+- Use standardized period labels: "FY2025", "FY2024", "FY2026 YTD", etc.
+- Set confidence based on how clearly the value was found
+- For missing values: value=null, confidence=0.0
+
+## NULL POLICY
+- value: null means "not present in the data"
+- Never guess or calculate values that aren't explicitly shown
+- Use raw_fields_used to note what you looked for"""
+
+
 def spread_financials(
     file_path: str,
     doc_type: str,
@@ -2355,21 +3002,34 @@ def spread_financials(
     if ext == ".pdf":
         # Handle auto-detection mode
         if doc_type.lower().strip() == "auto":
-            # Run the async combined extraction synchronously
-            return asyncio.run(spread_pdf_combined(file_path, **kwargs))
+            # Run the async combined extraction safely (handles nested event loops)
+            return _run_async_safely(spread_pdf_combined(file_path, **kwargs))
         
         if multi_period:
             return spread_pdf_multi_period(file_path, doc_type, **kwargs)
         else:
             return spread_pdf(file_path, doc_type, period, **kwargs)
     elif ext in [".xlsx", ".xls", ".xlsm"]:
-        # Future: Excel support
-        raise NotImplementedError(
-            f"Excel support coming soon. Please convert to PDF for now."
+        # Excel processing - text-based (CSV), no vision needed
+        # Filter out PDF-specific parameters that Excel processing doesn't use
+        excel_kwargs = {
+            k: v for k, v in kwargs.items()
+            if k not in ['dpi', 'max_pages']
+        }
+        
+        # Handle auto-detection mode with parallel extraction
+        if doc_type.lower().strip() == "auto":
+            # Run the async combined extraction safely (handles nested event loops)
+            return _run_async_safely(spread_excel_combined(file_path, **excel_kwargs))
+        
+        return spread_excel_multi_period(
+            excel_path=file_path,
+            doc_type=doc_type,
+            **excel_kwargs
         )
     else:
         raise ValueError(
-            f"Unsupported file type: {ext}. Supported: .pdf"
+            f"Unsupported file type: {ext}. Supported: .pdf, .xlsx, .xls, .xlsm"
         )
 
 
