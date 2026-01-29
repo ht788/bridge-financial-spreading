@@ -286,6 +286,7 @@ class TestRunSummary(BaseModel):
     company_name: str
     model_name: str
     prompt_version: Optional[str]
+    status: TestRunStatus
     overall_score: float
     overall_grade: GradeLevel
     total_files: int
