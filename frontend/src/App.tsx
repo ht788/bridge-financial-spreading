@@ -594,55 +594,84 @@ const getPeriodKey = (period: any): string => {
 };
 
 /**
- * Determine if a period is "primary" for its source file.
- * Primary periods should be preferred over comparative periods from other files.
- * e.g., FY24 from "2024 FS.pdf" is primary, FY24 from "2025 FS.pdf" is comparative.
+ * Extract the primary fiscal year from a filename.
+ * e.g., "Luminex 2025 FS.pdf" -> 2025, "FY24 Financials.pdf" -> 2024
  */
-const isPrimaryPeriod = (period: any, filename: string): boolean => {
-  if (!filename) return true;
+const getSourceDocumentYear = (filename: string): number | null => {
+  if (!filename) return null;
   
   // Extract years from filename (e.g., "Luminex 2024 FS" -> "2024")
   const filenameYears = filename.match(/20\d{2}/g) || [];
-  if (filenameYears.length === 0) return true; // Can't determine, assume primary
+  if (filenameYears.length === 0) return null;
   
-  // Get the most recent year from filename (likely the primary year)
-  const primaryYear = Math.max(...filenameYears.map(y => parseInt(y))).toString();
-  
-  // Check if period matches the primary year
+  // Return the most recent year from filename (likely the primary year)
+  return Math.max(...filenameYears.map(y => parseInt(y)));
+};
+
+/**
+ * Extract the fiscal year from a period's data.
+ * e.g., period with end_date "2024-12-31" -> 2024
+ */
+const getPeriodYear = (period: any): number | null => {
   const periodKey = getPeriodKey(period);
-  const periodYear = periodKey.match(/20\d{2}/)?.[0] || periodKey.slice(-4);
+  const match = periodKey.match(/20\d{2}/);
+  if (match) return parseInt(match[0]);
   
-  return periodYear === primaryYear;
+  // Try parsing last 4 chars as year
+  const lastFour = periodKey.slice(-4);
+  const parsed = parseInt(lastFour);
+  if (!isNaN(parsed) && parsed >= 2000 && parsed <= 2100) return parsed;
+  
+  return null;
 };
 
 /**
  * Aggregate batch results into a single multi-period view, with deduplication.
  * When the same period appears in multiple files (e.g., FY24 in both 2025 and 2024 financials),
- * prefer the "primary" version from its native file.
+ * prefer the version from the NEWER document (which may contain restated figures).
+ * 
+ * Logic: FY24 from FY25.pdf beats FY24 from FY24.pdf because 2025 > 2024
  */
 const aggregateBatchResults = (results: BatchResultItem[], docType: 'income' | 'balance') => {
   const validResults = results.filter(r => r.success && r.result?.data);
   if (validResults.length === 0) return null;
 
-  // Use a Map for deduplication: key -> { period, isPrimary, filename }
-  const periodMap = new Map<string, { period: any; isPrimary: boolean; filename: string }>();
+  // Use a Map for deduplication: key -> { period, sourceDocYear, filename }
+  const periodMap = new Map<string, { period: any; sourceDocYear: number | null; filename: string }>();
   let currency = 'USD';
   let scale = 'units';
 
   const addPeriodWithDedup = (period: any, pdfUrl: string, filename: string) => {
     const key = getPeriodKey(period);
-    const isPrimary = isPrimaryPeriod(period, filename);
-    const enrichedPeriod = { ...period, pdf_url: pdfUrl, original_filename: filename };
+    const sourceDocYear = getSourceDocumentYear(filename);
+    const periodYear = getPeriodYear(period);
+    
+    // Determine if this period comes from a newer source than the period's own year
+    const isFromNewerSource = sourceDocYear !== null && periodYear !== null && sourceDocYear > periodYear;
+    
+    const enrichedPeriod = { 
+      ...period, 
+      pdf_url: pdfUrl, 
+      original_filename: filename,
+      source_document_year: sourceDocYear,
+      is_from_newer_source: isFromNewerSource
+    };
     
     const existing = periodMap.get(key);
     if (!existing) {
       // First occurrence
-      periodMap.set(key, { period: enrichedPeriod, isPrimary, filename });
-    } else if (isPrimary && !existing.isPrimary) {
-      // New period is primary, existing is comparative - replace
-      periodMap.set(key, { period: enrichedPeriod, isPrimary, filename });
+      periodMap.set(key, { period: enrichedPeriod, sourceDocYear, filename });
+    } else {
+      // Prefer the period from the NEWER document (higher source year)
+      const existingDocYear = existing.sourceDocYear ?? 0;
+      const newDocYear = sourceDocYear ?? 0;
+      
+      if (newDocYear > existingDocYear) {
+        // New period is from a newer document - replace
+        periodMap.set(key, { period: enrichedPeriod, sourceDocYear, filename });
+      }
+      // Otherwise keep existing (it's from the same or newer document)
     }
-    // Otherwise keep existing (either both primary, both comparative, or existing is primary)
   };
 
   validResults.forEach(r => {

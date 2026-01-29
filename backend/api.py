@@ -32,7 +32,7 @@ from models import IncomeStatement, BalanceSheet, CombinedFinancialExtraction
 try:
     from backend.testing.test_runner import (
         run_test, get_test_history, get_test_result_by_id,
-        get_test_companies, get_available_models, get_current_prompt_content,
+        get_test_companies, get_test_companies_status, get_available_models, get_current_prompt_content,
         load_answer_key, save_answer_key
     )
     from backend.testing.test_models import (
@@ -45,7 +45,7 @@ except ImportError:
     try:
         from testing.test_runner import (
             run_test, get_test_history, get_test_result_by_id,
-            get_test_companies, get_available_models, get_current_prompt_content,
+            get_test_companies, get_test_companies_status, get_available_models, get_current_prompt_content,
             load_answer_key, save_answer_key
         )
         from testing.test_models import (
@@ -267,6 +267,46 @@ async def health_check():
         version="1.0.0",
         timestamp=datetime.utcnow().isoformat()
     )
+
+
+@app.post("/api/admin/restart")
+async def restart_server():
+    """
+    Restart the backend server via the startup service.
+    
+    This endpoint communicates with the backend_startup_service.js running on
+    port 8001 to gracefully restart the Python backend server.
+    """
+    import http.client
+    
+    try:
+        # Send restart request to startup service
+        conn = http.client.HTTPConnection("localhost", 8001, timeout=5)
+        conn.request("POST", "/restart")
+        response = conn.getresponse()
+        data = response.read()
+        conn.close()
+        
+        logger.info("Backend restart requested via startup service")
+        return {"success": True, "message": "Server restarting via startup service..."}
+    except Exception as e:
+        logger.error(f"Failed to contact startup service: {e}")
+        # Fallback: attempt direct restart
+        import sys
+        import threading
+        
+        def shutdown():
+            """Shutdown after a brief delay to allow response to be sent"""
+            import time
+            time.sleep(1)
+            logger.info("Restarting server via direct exit (startup service unavailable)")
+            sys.exit(0)
+        
+        thread = threading.Thread(target=shutdown)
+        thread.daemon = True
+        thread.start()
+        
+        return {"success": True, "message": "Server restarting directly (startup service unavailable)..."}
 
 
 @app.get("/api/logs")
@@ -1115,12 +1155,14 @@ async def broadcast_progress(job_id: str, status: str, message: str):
 async def get_testing_status():
     """
     Get testing system status including available companies and models.
+    Also includes file availability information for each company.
     """
     if not TESTING_ENABLED:
         raise HTTPException(status_code=503, detail="Testing module not available")
     
     try:
         companies = get_test_companies()
+        companies_status = get_test_companies_status()
         models = get_available_models()
         
         # Try to get prompt content, but don't fail if LangSmith isn't configured
@@ -1130,11 +1172,26 @@ async def get_testing_status():
         except Exception as prompt_err:
             logger.warning(f"Could not get prompt content: {prompt_err}")
         
-        return TestingStatusResponse(
+        # Log file availability status
+        for status in companies_status:
+            if status['missing_files'] > 0:
+                logger.warning(
+                    f"Company '{status['name']}' has {status['missing_files']}/{status['total_files']} "
+                    f"test files missing - tests will fail for missing files"
+                )
+        
+        response = TestingStatusResponse(
             available_companies=companies,
             available_models=models,
             current_prompt_content=prompt_content
         )
+        
+        # Add file availability to the response
+        response_dict = response.model_dump()
+        response_dict['companies_file_status'] = companies_status
+        response_dict['example_financials_dir'] = str(EXAMPLE_FINANCIALS_DIR)
+        
+        return response_dict
     except Exception as e:
         logger.error(f"Error getting testing status: {e}")
         raise HTTPException(status_code=500, detail=str(e))

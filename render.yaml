@@ -20,4 +20,6 @@ services:
         value: financial-spreader-production
       - key: API_HOST
         value: 0.0.0.0
+      - key: USE_LOCAL_PROMPTS
+        value: "true"
     healthCheckPath: /api/health

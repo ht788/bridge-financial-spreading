@@ -20,6 +20,7 @@ import {
   CompanyAnswerKey,
   ExpectedLineItem 
 } from '../../testingTypes';
+import { PDFViewer } from '../PDFViewer';
 
 interface AnswerKeyEditorPageProps {
   onBack: () => void;
@@ -80,7 +81,6 @@ export const AnswerKeyEditorPage: React.FC<AnswerKeyEditorPageProps> = ({ onBack
   
   // Refs
   const saveTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const iframeRef = useRef<HTMLIFrameElement>(null);
 
   // Load companies on mount
   useEffect(() => {
@@ -451,7 +451,7 @@ export const AnswerKeyEditorPage: React.FC<AnswerKeyEditorPageProps> = ({ onBack
                   Open in new tab
                 </a>
               </div>
-              <div className="flex-1 bg-gray-100">
+              <div className="flex-1 bg-gray-100 overflow-hidden">
                 {selectedFile && (
                   isExcelFile ? (
                     <div className="h-full flex items-center justify-center text-gray-500">
@@ -471,12 +471,7 @@ export const AnswerKeyEditorPage: React.FC<AnswerKeyEditorPageProps> = ({ onBack
                       </div>
                     </div>
                   ) : (
-                    <iframe
-                      ref={iframeRef}
-                      src={getFileUrl()}
-                      className="w-full h-full border-0"
-                      title="Financial Document"
-                    />
+                    <PDFViewer pdfUrl={getFileUrl()} />
                   )
                 )}
               </div>

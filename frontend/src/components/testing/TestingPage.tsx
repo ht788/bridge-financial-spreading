@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { ArrowLeft, FlaskConical, RefreshCw, AlertCircle, Wifi, WifiOff } from 'lucide-react';
+import { ArrowLeft, FlaskConical, RefreshCw, AlertCircle, Wifi, WifiOff, RotateCw } from 'lucide-react';
 import { TestConfigPanel } from './TestConfigPanel';
 import { TestResultsComparison } from './TestResultsComparison';
 import { TestHistoryTable } from './TestHistoryTable';
@@ -10,6 +10,7 @@ import {
   AvailableModel,
   TestRunResult,
   TestRunSummary,
+  CompanyFileStatus,
 } from '../../testingTypes';
 import { connectionManager, ConnectionStatus, WebSocketMessage } from '../../utils/connectionManager';
 import { notifyTestComplete, notifyError } from '../../utils/notifications';
@@ -23,6 +24,7 @@ export const TestingPage: React.FC<TestingPageProps> = ({ onBack }) => {
   const [status, setStatus] = useState<'loading' | 'idle' | 'running' | 'complete' | 'error'>('loading');
   const [companies, setCompanies] = useState<TestCompany[]>([]);
   const [models, setModels] = useState<AvailableModel[]>([]);
+  const [companiesFileStatus, setCompaniesFileStatus] = useState<CompanyFileStatus[]>([]);
   const [selectedCompany, setSelectedCompany] = useState<TestCompany | undefined>();
   const [selectedModel, setSelectedModel] = useState<AvailableModel | undefined>();
   const [promptContent, setPromptContent] = useState<string>('');
@@ -137,16 +139,43 @@ export const TestingPage: React.FC<TestingPageProps> = ({ onBack }) => {
       console.log('[TESTING PAGE] Status loaded:', {
         companies: response.available_companies.length,
         models: response.available_models.length,
-        hasPromptContent: !!response.current_prompt_content
+        hasPromptContent: !!response.current_prompt_content,
+        hasFileStatus: !!response.companies_file_status
       });
       
       setCompanies(response.available_companies);
       setModels(response.available_models);
       
-      // Set defaults
+      // Set file status if available
+      if (response.companies_file_status) {
+        console.log('[TESTING PAGE] File status loaded:', response.companies_file_status.map(s => ({
+          id: s.id,
+          available: s.available_files,
+          missing: s.missing_files,
+          canTest: s.can_test
+        })));
+        setCompaniesFileStatus(response.companies_file_status);
+        
+        // Warn if any companies have missing files
+        const companiesWithMissingFiles = response.companies_file_status.filter(s => s.missing_files > 0);
+        if (companiesWithMissingFiles.length > 0) {
+          console.warn('[TESTING PAGE] ⚠️ Some companies have missing test files:', 
+            companiesWithMissingFiles.map(s => `${s.name}: ${s.missing_files}/${s.total_files} missing`));
+        }
+      }
+      
+      // Set defaults - prefer a company that can be tested
       if (response.available_companies.length > 0) {
-        console.log('[TESTING PAGE] Setting default company:', response.available_companies[0].id);
-        setSelectedCompany(response.available_companies[0]);
+        // Try to find a company that can be tested
+        let defaultCompany = response.available_companies[0];
+        if (response.companies_file_status) {
+          const testableCompany = response.companies_file_status.find(s => s.can_test);
+          if (testableCompany) {
+            defaultCompany = response.available_companies.find(c => c.id === testableCompany.id) || defaultCompany;
+          }
+        }
+        console.log('[TESTING PAGE] Setting default company:', defaultCompany.id);
+        setSelectedCompany(defaultCompany);
       }
       if (response.available_models.length > 0) {
         console.log('[TESTING PAGE] Setting default model:', response.available_models[0].id);
@@ -468,6 +497,33 @@ export const TestingPage: React.FC<TestingPageProps> = ({ onBack }) => {
                 </button>
               )}
               
+              {/* Restart Backend Button - visible when connected */}
+              {connectionStatus.state === 'connected' && (
+                <button
+                  onClick={async () => {
+                    if (confirm('Restart the backend server? This will interrupt any running tests.')) {
+                      try {
+                        const response = await fetch('/api/admin/restart', { method: 'POST' });
+                        if (!response.ok) throw new Error('Restart request failed');
+                        // Wait then reconnect
+                        setTimeout(() => {
+                          setIsManualReconnecting(true);
+                          connectionManager.reconnect();
+                        }, 2000);
+                      } catch (error) {
+                        console.error('Failed to restart backend:', error);
+                        alert('Failed to restart backend. You may need to restart manually.');
+                      }
+                    }
+                  }}
+                  className="flex items-center gap-2 px-3 py-1.5 text-sm text-blue-600 hover:text-blue-700 hover:bg-blue-50 rounded-lg transition-colors border border-blue-200"
+                  title="Restart backend server (requires manual confirmation)"
+                >
+                  <RotateCw className="w-4 h-4" />
+                  Restart Backend
+                </button>
+              )}
+              
               <button
                 onClick={loadHistory}
                 className="flex items-center gap-2 px-3 py-1.5 text-sm text-gray-600 hover:text-gray-900 hover:bg-gray-100 rounded-lg transition-colors"
@@ -523,6 +579,7 @@ export const TestingPage: React.FC<TestingPageProps> = ({ onBack }) => {
                 extendedThinking={extendedThinking}
                 parallel={parallel}
                 maxConcurrent={maxConcurrent}
+                companiesFileStatus={companiesFileStatus}
                 onSelectCompany={setSelectedCompany}
                 onSelectModel={setSelectedModel}
                 onPromptChange={setPromptContent}

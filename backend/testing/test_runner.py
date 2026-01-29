@@ -151,8 +151,72 @@ TEST_COMPANIES: List[TestCompany] = [
 
 
 def get_test_companies() -> List[TestCompany]:
-    """Get list of available test companies"""
-    return TEST_COMPANIES
+    """Get list of available test companies with file availability info"""
+    companies_with_status = []
+    
+    for company in TEST_COMPANIES:
+        # Check which files actually exist
+        available_files = []
+        missing_files = []
+        
+        for test_file in company.files:
+            file_path = EXAMPLE_FINANCIALS_DIR / test_file.filename
+            if file_path.exists():
+                available_files.append(test_file)
+            else:
+                missing_files.append(test_file)
+        
+        # Create a copy with availability metadata
+        company_dict = company.model_dump()
+        company_dict['available_files'] = len(available_files)
+        company_dict['missing_files'] = len(missing_files)
+        company_dict['files_available'] = [f.filename for f in available_files]
+        company_dict['files_missing'] = [f.filename for f in missing_files]
+        company_dict['can_test'] = len(available_files) > 0
+        
+        if missing_files:
+            logger.warning(f"Company {company.id}: {len(missing_files)} test files missing")
+        
+        companies_with_status.append(TestCompany(**{k: v for k, v in company_dict.items() 
+                                                    if k in TestCompany.model_fields}))
+    
+    return companies_with_status
+
+
+def get_test_companies_status() -> List[Dict[str, Any]]:
+    """Get detailed test company status including file availability"""
+    companies_status = []
+    
+    for company in TEST_COMPANIES:
+        available_files = []
+        missing_files = []
+        
+        for test_file in company.files:
+            file_path = EXAMPLE_FINANCIALS_DIR / test_file.filename
+            file_info = {
+                "filename": test_file.filename,
+                "doc_type": test_file.doc_type,
+                "period": test_file.period,
+                "exists": file_path.exists()
+            }
+            if file_path.exists():
+                file_info["size_bytes"] = file_path.stat().st_size
+                available_files.append(file_info)
+            else:
+                missing_files.append(file_info)
+        
+        companies_status.append({
+            "id": company.id,
+            "name": company.name,
+            "total_files": len(company.files),
+            "available_files": len(available_files),
+            "missing_files": len(missing_files),
+            "can_test": len(available_files) > 0,
+            "files": available_files + missing_files,
+            "answer_key_path": company.answer_key_path
+        })
+    
+    return companies_status
 
 
 def get_available_models() -> List[AvailableModel]:

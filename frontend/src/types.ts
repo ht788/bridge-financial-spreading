@@ -88,6 +88,11 @@ export interface PeriodData {
   end_date?: string | null;
   pdf_url?: string;
   original_filename?: string;
+  /** The fiscal year extracted from the source document filename (e.g., 2025 from "FY25 Financials.pdf") */
+  source_document_year?: number;
+  /** True if this period's data comes from a newer document than the period's own year 
+   *  (e.g., FY24 data extracted from a FY25 document, which may contain restated figures) */
+  is_from_newer_source?: boolean;
 }
 
 export interface IncomeStatementPeriod extends PeriodData {

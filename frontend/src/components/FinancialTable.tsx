@@ -9,11 +9,12 @@ import {
   MultiPeriodIncomeStatement,
   MultiPeriodBalanceSheet,
   isMultiPeriod,
+  PeriodData,
 } from '../types';
 import { formatCurrency, fieldNameToLabel, normalizePeriodLabel } from '../utils';
 import { ConfidenceBadge } from './ConfidenceBadge';
 import { TrendSparkline } from './TrendSparkline';
-import { Info, Calendar, FileText, ChevronRight, ChevronDown } from 'lucide-react';
+import { Info, Calendar, FileText, ChevronRight, ChevronDown, RefreshCw } from 'lucide-react';
 import clsx from 'clsx';
 
 // Helper to check if a line item has breakdown data
@@ -169,32 +170,47 @@ const MultiPeriodIncomeStatementTable: React.FC<MultiPeriodIncomeTableProps> = (
                 <th className="py-3 px-3 text-center text-xs font-semibold text-gray-600 uppercase tracking-wider w-24 bg-gray-50/80 backdrop-blur-sm">
                   Trend
                 </th>
-                {periods.map((period, idx) => (
-                  <th 
-                    key={idx} 
-                    className={clsx(
-                      "py-3 px-3 text-right text-xs font-semibold text-gray-600 uppercase tracking-wider bg-gray-50/80 backdrop-blur-sm group relative",
-                      onPeriodSelect && period.pdf_url ? "cursor-pointer hover:bg-blue-50/50 transition-colors" : ""
-                    )}
-                    onClick={() => period.pdf_url && onPeriodSelect?.(period.pdf_url)}
-                    title={period.pdf_url ? "Click to view source document" : undefined}
-                  >
-                    <div className="flex flex-col items-end gap-0.5">
-                      <div className="flex items-center gap-1.5">
-                        {period.pdf_url && (
-                          <FileText className="w-3 h-3 text-blue-400 opacity-0 group-hover:opacity-100 transition-opacity" />
-                        )}
-                        <span>{normalizePeriodLabel(period.period_label)}</span>
-                      </div>
-                      {period.end_date && (
-                        <span className="text-[10px] text-gray-400 font-normal flex items-center gap-1">
-                          <Calendar className="w-3 h-3" />
-                          {period.end_date}
-                        </span>
+                {periods.map((period, idx) => {
+                  const periodData = period as PeriodData;
+                  const isRestated = periodData.is_from_newer_source;
+                  const sourceYear = periodData.source_document_year;
+                  
+                  return (
+                    <th 
+                      key={idx} 
+                      className={clsx(
+                        "py-3 px-3 text-right text-xs font-semibold text-gray-600 uppercase tracking-wider bg-gray-50/80 backdrop-blur-sm group relative",
+                        onPeriodSelect && period.pdf_url ? "cursor-pointer hover:bg-blue-50/50 transition-colors" : ""
                       )}
-                    </div>
-                  </th>
-                ))}
+                      onClick={() => period.pdf_url && onPeriodSelect?.(period.pdf_url)}
+                      title={period.pdf_url ? "Click to view source document" : undefined}
+                    >
+                      <div className="flex flex-col items-end gap-0.5">
+                        <div className="flex items-center gap-1.5">
+                          {period.pdf_url && (
+                            <FileText className="w-3 h-3 text-blue-400 opacity-0 group-hover:opacity-100 transition-opacity" />
+                          )}
+                          <span>{normalizePeriodLabel(period.period_label)}</span>
+                          {isRestated && (
+                            <span 
+                              className="inline-flex items-center gap-0.5 px-1.5 py-0.5 bg-amber-100 text-amber-700 rounded text-[9px] font-medium normal-case tracking-normal"
+                              title={sourceYear ? `Data from FY${sourceYear} document (may include restated figures)` : 'Data from newer document (may include restated figures)'}
+                            >
+                              <RefreshCw className="w-2.5 h-2.5" />
+                              restated
+                            </span>
+                          )}
+                        </div>
+                        {period.end_date && (
+                          <span className="text-[10px] text-gray-400 font-normal flex items-center gap-1">
+                            <Calendar className="w-3 h-3" />
+                            {period.end_date}
+                          </span>
+                        )}
+                      </div>
+                    </th>
+                  );
+                })}
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-200">
@@ -427,32 +443,47 @@ const MultiPeriodBalanceSheetTable: React.FC<MultiPeriodBalanceTableProps> = ({ 
                 <th className="py-3 px-3 text-center text-xs font-semibold text-gray-600 uppercase tracking-wider w-24 bg-gray-50/80 backdrop-blur-sm">
                   Trend
                 </th>
-                {periods.map((period, idx) => (
-                  <th 
-                    key={idx} 
-                    className={clsx(
-                      "py-3 px-3 text-right text-xs font-semibold text-gray-600 uppercase tracking-wider bg-gray-50/80 backdrop-blur-sm group relative",
-                      onPeriodSelect && period.pdf_url ? "cursor-pointer hover:bg-blue-50/50 transition-colors" : ""
-                    )}
-                    onClick={() => period.pdf_url && onPeriodSelect?.(period.pdf_url)}
-                    title={period.pdf_url ? "Click to view source document" : undefined}
-                  >
-                    <div className="flex flex-col items-end gap-0.5">
-                      <div className="flex items-center gap-1.5">
-                        {period.pdf_url && (
-                          <FileText className="w-3 h-3 text-blue-400 opacity-0 group-hover:opacity-100 transition-opacity" />
-                        )}
-                        <span>{normalizePeriodLabel(period.period_label)}</span>
-                      </div>
-                      {period.end_date && (
-                        <span className="text-[10px] text-gray-400 font-normal flex items-center gap-1">
-                          <Calendar className="w-3 h-3" />
-                          {period.end_date}
-                        </span>
+                {periods.map((period, idx) => {
+                  const periodData = period as PeriodData;
+                  const isRestated = periodData.is_from_newer_source;
+                  const sourceYear = periodData.source_document_year;
+                  
+                  return (
+                    <th 
+                      key={idx} 
+                      className={clsx(
+                        "py-3 px-3 text-right text-xs font-semibold text-gray-600 uppercase tracking-wider bg-gray-50/80 backdrop-blur-sm group relative",
+                        onPeriodSelect && period.pdf_url ? "cursor-pointer hover:bg-blue-50/50 transition-colors" : ""
                       )}
-                    </div>
-                  </th>
-                ))}
+                      onClick={() => period.pdf_url && onPeriodSelect?.(period.pdf_url)}
+                      title={period.pdf_url ? "Click to view source document" : undefined}
+                    >
+                      <div className="flex flex-col items-end gap-0.5">
+                        <div className="flex items-center gap-1.5">
+                          {period.pdf_url && (
+                            <FileText className="w-3 h-3 text-blue-400 opacity-0 group-hover:opacity-100 transition-opacity" />
+                          )}
+                          <span>{normalizePeriodLabel(period.period_label)}</span>
+                          {isRestated && (
+                            <span 
+                              className="inline-flex items-center gap-0.5 px-1.5 py-0.5 bg-amber-100 text-amber-700 rounded text-[9px] font-medium normal-case tracking-normal"
+                              title={sourceYear ? `Data from FY${sourceYear} document (may include restated figures)` : 'Data from newer document (may include restated figures)'}
+                            >
+                              <RefreshCw className="w-2.5 h-2.5" />
+                              restated
+                            </span>
+                          )}
+                        </div>
+                        {period.end_date && (
+                          <span className="text-[10px] text-gray-400 font-normal flex items-center gap-1">
+                            <Calendar className="w-3 h-3" />
+                            {period.end_date}
+                          </span>
+                        )}
+                      </div>
+                    </th>
+                  );
+                })}
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-200">

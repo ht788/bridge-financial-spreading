@@ -1066,6 +1066,34 @@ PROMPT_MAP = {
 }
 
 
+def _create_fallback_prompt(doc_type: str) -> ChatPromptTemplate:
+    """
+    Create a fallback ChatPromptTemplate when LangSmith Hub is unavailable.
+    
+    Uses the enhanced extraction system prompt for high-quality results
+    even without Hub access.
+    
+    Args:
+        doc_type: Type of document ('income' or 'balance')
+        
+    Returns:
+        ChatPromptTemplate with system and human message templates
+    """
+    from langchain_core.prompts import SystemMessagePromptTemplate, HumanMessagePromptTemplate
+    
+    # Use the enhanced system prompt (defined later in this file)
+    # We need to call it lazily to avoid circular reference
+    system_content = _get_enhanced_extraction_system_prompt(doc_type)
+    
+    system_template = SystemMessagePromptTemplate.from_template(system_content)
+    human_template = HumanMessagePromptTemplate.from_template("{input}")
+    
+    prompt = ChatPromptTemplate.from_messages([system_template, human_template])
+    logger.info(f"[FALLBACK] Created local fallback prompt for {doc_type}")
+    
+    return prompt
+
+
 @traceable(
     name="load_from_hub",
     tags=["hub", "prompt-management"],
@@ -1075,8 +1103,11 @@ def load_from_hub(doc_type: str) -> Tuple[ChatPromptTemplate, Optional[dict]]:
     """
     Load prompt and model configuration from LangSmith Hub.
     
-    This function ALWAYS requires Hub access - there is no fallback.
-    If Hub is unavailable, the function will fail fast with a clear error.
+    If Hub is unavailable or USE_LOCAL_PROMPTS=true, falls back to local prompts.
+    This ensures the app can work without LangSmith Hub access.
+    
+    Environment Variables:
+        USE_LOCAL_PROMPTS: Set to 'true' to skip Hub and use local prompts
     
     Uses `include_model=True` to pull the full chain including model config
     when a model is configured in LangSmith Hub (ChatOpenAI section).
@@ -1091,18 +1122,10 @@ def load_from_hub(doc_type: str) -> Tuple[ChatPromptTemplate, Optional[dict]]:
     Raises:
         ImportError: If langsmith is not installed
         ValueError: If doc_type is not recognized
-        RuntimeError: If Hub is unavailable or prompt doesn't exist
     """
-    try:
-        from langsmith import Client
-        from langchain_core.runnables import RunnableSequence, RunnableBinding
-    except ImportError as e:
-        raise ImportError(
-            "langsmith and langchain-core are required for Hub access. "
-            "Install with: pip install langsmith langchain-core"
-        ) from e
+    global _fallback_prompt_used
     
-    # Normalize document type
+    # Normalize document type first
     doc_type_normalized = doc_type.lower().strip()
     
     if doc_type_normalized not in PROMPT_MAP:
@@ -1110,6 +1133,21 @@ def load_from_hub(doc_type: str) -> Tuple[ChatPromptTemplate, Optional[dict]]:
             f"Unknown document type: '{doc_type}'. "
             f"Valid types: {list(PROMPT_MAP.keys())}"
         )
+    
+    # Check if local prompts are forced via environment variable
+    use_local = os.getenv("USE_LOCAL_PROMPTS", "").lower() in ("true", "1", "yes")
+    if use_local:
+        logger.info(f"[HUB] USE_LOCAL_PROMPTS=true, using local fallback prompt for {doc_type}")
+        _fallback_prompt_used = True
+        return _create_fallback_prompt(doc_type_normalized), None
+    
+    try:
+        from langsmith import Client
+        from langchain_core.runnables import RunnableSequence, RunnableBinding
+    except ImportError as e:
+        logger.warning(f"[HUB] langsmith not installed, using fallback prompt: {e}")
+        _fallback_prompt_used = True
+        return _create_fallback_prompt(doc_type_normalized), None
     
     prompt_name = PROMPT_MAP[doc_type_normalized]
     logger.info(f"[HUB] Pulling prompt from LangSmith Hub: {prompt_name}")
@@ -1162,17 +1200,17 @@ def load_from_hub(doc_type: str) -> Tuple[ChatPromptTemplate, Optional[dict]]:
         return prompt, model_config
         
     except Exception as e:
-        logger.error(f"[HUB] Failed to pull from Hub: {e}")
-        raise RuntimeError(
-            f"Could not load '{prompt_name}' from LangSmith Hub. "
-            f"Ensure LANGSMITH_API_KEY is set and the prompt exists at: "
-            f"https://smith.langchain.com/prompts/{prompt_name} "
+        # Fall back to local prompt instead of failing
+        logger.warning(
+            f"[HUB] Failed to pull '{prompt_name}' from Hub, using fallback prompt. "
             f"Error: {e}"
-        ) from e
+        )
+        _fallback_prompt_used = True
+        return _create_fallback_prompt(doc_type_normalized), None
 
 
-# NOTE: Fallback prompts have been removed.
-# All prompts MUST come from LangSmith Hub.
+# NOTE: Local fallback prompts are now available when LangSmith Hub is unavailable.
+# Set USE_LOCAL_PROMPTS=true to always use local prompts.
 # See: https://smith.langchain.com/prompts/income-statement
 # See: https://smith.langchain.com/prompts/balance-sheet
 

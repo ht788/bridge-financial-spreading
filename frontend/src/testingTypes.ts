@@ -175,10 +175,29 @@ export interface TestHistoryResponse {
 // API RESPONSE TYPES
 // =============================================================================
 
+export interface CompanyFileStatus {
+  id: string;
+  name: string;
+  total_files: number;
+  available_files: number;
+  missing_files: number;
+  can_test: boolean;
+  files: {
+    filename: string;
+    doc_type: string;
+    period: string;
+    exists: boolean;
+    size_bytes?: number;
+  }[];
+  answer_key_path?: string;
+}
+
 export interface TestingStatusResponse {
   available_companies: TestCompany[];
   available_models: AvailableModel[];
   current_prompt_content?: string;
+  companies_file_status?: CompanyFileStatus[];
+  example_financials_dir?: string;
 }
 
 // =============================================================================
