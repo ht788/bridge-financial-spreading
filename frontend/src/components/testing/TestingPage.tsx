@@ -79,13 +79,16 @@ export const TestingPage: React.FC<TestingPageProps> = ({ onBack }) => {
     }
 
     console.log('[TESTING PAGE] Subscribing to ConnectionManager for progress updates');
+    console.log('[TESTING PAGE] ConnectionManager status:', connectionManager.getStatus());
     
     const unsubscribe = connectionManager.onMessage((message: WebSocketMessage) => {
-      console.log('[TESTING PAGE] WebSocket message received:', message.type, message);
+      console.log('[TESTING PAGE] ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+      console.log('[TESTING PAGE] WebSocket message received:', message.type);
+      console.log('[TESTING PAGE] Message payload:', JSON.stringify(message.payload).substring(0, 200));
       
       // Handle test_progress messages
       if (message.type === 'test_progress' && message.payload) {
-        console.log('[TESTING PAGE] Progress update:', message.payload);
+        console.log('[TESTING PAGE] ✓ PROGRESS UPDATE:', message.payload);
         if (isMounted.current) {
           setTestProgress(message.payload as TestProgress);
         }
@@ -93,6 +96,7 @@ export const TestingPage: React.FC<TestingPageProps> = ({ onBack }) => {
     });
     
     messageUnsubscribeRef.current = unsubscribe;
+    console.log('[TESTING PAGE] ✓ Subscription registered');
   }, []);
 
   // Unsubscribe from progress updates when not running a test
@@ -247,6 +251,10 @@ export const TestingPage: React.FC<TestingPageProps> = ({ onBack }) => {
       setCurrentResult(null);
       setTestProgress(null);
 
+      // Pause health checks during test to prevent false disconnections
+      // (backend is busy and won't respond to health checks during extraction)
+      connectionManager.pauseHealthChecks();
+
       // Subscribe to ConnectionManager for progress updates
       subscribeToProgress();
 
@@ -290,6 +298,9 @@ export const TestingPage: React.FC<TestingPageProps> = ({ onBack }) => {
         result.execution_time_seconds
       );
       
+      // Resume health checks now that test is complete
+      connectionManager.resumeHealthChecks();
+      
       // Unsubscribe from progress after a short delay to show final progress
       setTimeout(() => {
         unsubscribeFromProgress();
@@ -326,7 +337,8 @@ export const TestingPage: React.FC<TestingPageProps> = ({ onBack }) => {
       // Show error notification
       notifyError('Test Run Failed', errorMessage);
       
-      // Unsubscribe from progress on error
+      // Resume health checks and unsubscribe from progress on error
+      connectionManager.resumeHealthChecks();
       unsubscribeFromProgress();
       setTestProgress(null);
     }

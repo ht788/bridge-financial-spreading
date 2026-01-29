@@ -1061,12 +1061,18 @@ def calculate_average_confidence(data: Dict[str, Any]) -> float:
 
 async def broadcast_message(message: dict):
     """Broadcast a message to all connected WebSocket clients."""
+    msg_type = message.get("type", "unknown")
     disconnected = []
+    sent_count = 0
+    
+    if msg_type == "test_progress":
+        logger.info(f"[BROADCAST] Broadcasting {msg_type} to {len(active_connections)} clients")
     
     for connection in active_connections:
         try:
             # Check if connection is still active before sending
             await connection.send_json(message)
+            sent_count += 1
         except RuntimeError as e:
             # WebSocket is closed or not connected
             logger.debug(f"[BROADCAST] WebSocket closed: {e}")
@@ -1080,6 +1086,9 @@ async def broadcast_message(message: dict):
         if conn in active_connections:
             active_connections.remove(conn)
             logger.info("[BROADCAST] Removed disconnected client")
+    
+    if msg_type == "test_progress":
+        logger.info(f"[BROADCAST] ✓ Successfully sent to {sent_count}/{len(active_connections) + len(disconnected)} clients")
 
 
 async def broadcast_progress(job_id: str, status: str, message: str):
@@ -1165,12 +1174,14 @@ async def run_test_endpoint(config: dict):
         # Progress callback to broadcast updates via WebSocket
         async def progress_callback(test_id: str, progress_data: dict):
             """Broadcast test progress to all connected WebSocket clients"""
+            logger.info(f"[PROGRESS BROADCAST] phase={progress_data.get('phase')}, connected_clients={len(active_connections)}")
             await broadcast_message({
                 "type": "test_progress",
                 "job_id": test_id,
                 "timestamp": datetime.utcnow().isoformat() + "Z",
                 "payload": progress_data
             })
+            logger.info(f"[PROGRESS BROADCAST] ✓ Sent to {len(active_connections)} clients")
         
         result = await run_test(test_config, progress_callback=progress_callback)
         
