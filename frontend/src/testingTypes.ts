@@ -53,6 +53,35 @@ export interface ExpectedLineItem {
   notes?: string;
 }
 
+/**
+ * Answer key for a single statement type (income or balance) within a period
+ */
+export interface StatementAnswerKey {
+  expected: Record<string, ExpectedLineItem>;
+}
+
+/**
+ * All statements for a single period - the canonical structure.
+ * Each period can have income and/or balance statement expected values.
+ */
+export interface PeriodStatements {
+  period_label: string;
+  income?: StatementAnswerKey | null;
+  balance?: StatementAnswerKey | null;
+}
+
+/**
+ * Complete answer key for a company.
+ * Uses period-based structure where each period has income and/or balance statements.
+ * This eliminates duplication when the same period appears in multiple files.
+ */
+export interface CompanyAnswerKey {
+  company_id: string;
+  company_name: string;
+  periods: PeriodStatements[];
+}
+
+// Legacy types kept for backward compatibility if needed
 export interface PeriodAnswerKey {
   period_label: string;
   doc_type: string;
@@ -63,12 +92,6 @@ export interface FileAnswerKey {
   filename: string;
   doc_type: string;
   periods: PeriodAnswerKey[];
-}
-
-export interface CompanyAnswerKey {
-  company_id: string;
-  company_name: string;
-  files: FileAnswerKey[];
 }
 
 // =============================================================================

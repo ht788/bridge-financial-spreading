@@ -28,7 +28,8 @@ try:
         FileAnswerKey, PeriodAnswerKey, CompanyAnswerKey,
         FieldComparison, FieldAccuracy, PeriodGrade, FileGrade,
         GradeLevel, score_to_grade, TestRunSummary, TestHistoryResponse,
-        ExpectedLineItem, AvailableModel, TestRunStatus
+        ExpectedLineItem, AvailableModel, TestRunStatus,
+        StatementAnswerKey, PeriodStatements
     )
 except ImportError:
     from backend.testing.test_models import (
@@ -36,7 +37,8 @@ except ImportError:
         FileAnswerKey, PeriodAnswerKey, CompanyAnswerKey,
         FieldComparison, FieldAccuracy, PeriodGrade, FileGrade,
         GradeLevel, score_to_grade, TestRunSummary, TestHistoryResponse,
-        ExpectedLineItem, AvailableModel, TestRunStatus
+        ExpectedLineItem, AvailableModel, TestRunStatus,
+        StatementAnswerKey, PeriodStatements
     )
 
 # Import spreader functionality
@@ -557,6 +559,60 @@ def find_matching_period(
     return None
 
 
+def find_period_answer(
+    answer_key: CompanyAnswerKey,
+    period_label: str,
+    doc_type: str
+) -> Optional[Dict[str, ExpectedLineItem]]:
+    """
+    Find expected values for a period/statement combination in the new period-based structure.
+    
+    This function looks up expected values directly by period label and statement type,
+    eliminating the need for file-based lookups.
+    
+    Args:
+        answer_key: The company answer key (period-based structure)
+        period_label: The period label from extraction (e.g., 'FY2023', '2024')
+        doc_type: The document type ('income' or 'balance')
+    
+    Returns:
+        Dictionary of expected values keyed by field name, or None if not found
+    """
+    if not answer_key or not answer_key.periods:
+        return None
+    
+    # First try exact match
+    for period in answer_key.periods:
+        if period.period_label == period_label:
+            statement = period.income if doc_type == "income" else period.balance
+            if statement and statement.expected:
+                logger.info(f"Exact period match: '{period_label}' ({doc_type})")
+                return {
+                    k: ExpectedLineItem(**v) if isinstance(v, dict) else v
+                    for k, v in statement.expected.items()
+                }
+    
+    # Try fuzzy matching using periods_match
+    for period in answer_key.periods:
+        if periods_match(period_label, period.period_label):
+            statement = period.income if doc_type == "income" else period.balance
+            if statement and statement.expected:
+                logger.info(f"Fuzzy period match: '{period_label}' -> '{period.period_label}' ({doc_type})")
+                return {
+                    k: ExpectedLineItem(**v) if isinstance(v, dict) else v
+                    for k, v in statement.expected.items()
+                }
+    
+    # Log available periods for debugging
+    available = [p.period_label for p in answer_key.periods]
+    logger.warning(
+        f"No answer key found for period '{period_label}' ({doc_type}). "
+        f"Available periods: {available}"
+    )
+    
+    return None
+
+
 def compare_field(
     field_name: str,
     extracted_value: Optional[float],
@@ -905,17 +961,6 @@ async def _process_test_file(
                 for stmt_doc_type, stmt_result in statements_to_process:
                     logger.info(f"[TEST RUN {test_id}] Processing {stmt_doc_type} statement from combined result...")
                     
-                    # Get answer key for this doc type
-                    file_answer_key = None
-                    if answer_key:
-                        file_answer_key = next(
-                            (f for f in answer_key.files 
-                             if f.filename == test_file.filename and f.doc_type == stmt_doc_type),
-                            None
-                        )
-                        if file_answer_key:
-                            logger.info(f"[TEST RUN {test_id}] Found answer key for {stmt_doc_type} with {len(file_answer_key.periods)} periods")
-                    
                     # Grade each period
                     period_grades: List[PeriodGrade] = []
                     
@@ -926,19 +971,16 @@ async def _process_test_file(
                             
                             logger.info(f"[TEST RUN {test_id}]   {stmt_doc_type.upper()} Period {period_idx}: '{period_label}'")
                             
-                            # Get expected values for this period
+                            # Get expected values for this period using period-based lookup
                             expected = {}
-                            if file_answer_key:
-                                period_answer = find_matching_period(
-                                    extracted_label=period_label,
-                                    answer_key_periods=file_answer_key.periods,
-                                    fuzzy_match=True
-                                )
-                                if period_answer:
-                                    expected = {
-                                        k: ExpectedLineItem(**v) if isinstance(v, dict) else v
-                                        for k, v in period_answer.expected.items()
-                                    }
+                            if answer_key:
+                                expected = find_period_answer(
+                                    answer_key=answer_key,
+                                    period_label=period_label,
+                                    doc_type=stmt_doc_type
+                                ) or {}
+                                if expected:
+                                    logger.info(f"[TEST RUN {test_id}]     - Found answer key with {len(expected)} expected fields")
                             
                             grade = grade_period(
                                 period_label=period_label,
@@ -977,30 +1019,12 @@ async def _process_test_file(
                 
             else:
                 # Standard single doc_type result (income or balance)
-                # Get answer key for this file - match BOTH filename AND doc_type
-                file_answer_key = None
+                # Using period-based lookup instead of file-based
                 if answer_key:
-                    file_answer_key = next(
-                        (f for f in answer_key.files 
-                         if f.filename == test_file.filename and f.doc_type == test_file.doc_type),
-                        None
-                    )
-                    if file_answer_key:
-                        logger.info(f"[TEST RUN {test_id}] Found answer key for {test_file.doc_type} with {len(file_answer_key.periods)} periods")
-                        logger.info(f"[TEST RUN {test_id}] Answer key periods: {[p.period_label for p in file_answer_key.periods]}")
-                    else:
-                        # Try fallback to filename-only match for backwards compatibility
-                        file_answer_key = next(
-                            (f for f in answer_key.files if f.filename == test_file.filename),
-                            None
-                        )
-                        if file_answer_key:
-                            logger.warning(
-                                f"[TEST RUN {test_id}] No exact doc_type match, using filename-only match "
-                                f"(file doc_type: {file_answer_key.doc_type}, test doc_type: {test_file.doc_type})"
-                            )
-                        else:
-                            logger.warning(f"[TEST RUN {test_id}] No answer key found for this file")
+                    available_periods = [p.period_label for p in answer_key.periods]
+                    logger.info(f"[TEST RUN {test_id}] Answer key has {len(answer_key.periods)} periods: {available_periods}")
+                else:
+                    logger.warning(f"[TEST RUN {test_id}] No answer key available for grading")
                 
                 # Grade each period
                 period_grades: List[PeriodGrade] = []
@@ -1016,23 +1040,18 @@ async def _process_test_file(
                         logger.info(f"[TEST RUN {test_id}]   Period {period_idx}/{len(extraction_result.periods)}: '{period_label}'")
                         logger.info(f"[TEST RUN {test_id}]     - Extracted fields: {len(period_data)}")
                         
-                        # Get expected values for this period (using fuzzy matching)
+                        # Get expected values for this period using period-based lookup
                         expected = {}
-                        if file_answer_key:
-                            period_answer = find_matching_period(
-                                extracted_label=period_label,
-                                answer_key_periods=file_answer_key.periods,
-                                fuzzy_match=True
-                            )
-                            if period_answer:
-                                expected = {
-                                    k: ExpectedLineItem(**v) if isinstance(v, dict) else v
-                                    for k, v in period_answer.expected.items()
-                                }
-                                logger.info(f"[TEST RUN {test_id}]     - Matched to answer key period: '{period_answer.period_label}'")
-                                logger.info(f"[TEST RUN {test_id}]     - Expected fields: {len(expected)}")
+                        if answer_key:
+                            expected = find_period_answer(
+                                answer_key=answer_key,
+                                period_label=period_label,
+                                doc_type=test_file.doc_type
+                            ) or {}
+                            if expected:
+                                logger.info(f"[TEST RUN {test_id}]     - Found answer key with {len(expected)} expected fields")
                             else:
-                                logger.warning(f"[TEST RUN {test_id}]     - No expected values for period '{period_label}'")
+                                logger.warning(f"[TEST RUN {test_id}]     - No expected values for period '{period_label}' ({test_file.doc_type})")
                         
                         logger.info(f"[TEST RUN {test_id}]   Grading period '{period_label}'...")
                         grade = grade_period(
@@ -1222,7 +1241,7 @@ async def run_test(config: TestRunConfig, progress_callback=None) -> TestRunResu
     if not answer_key:
         logger.warning(f"[TEST RUN {test_id}] No answer key found for {config.company_id}, will compare against extracted data only")
     else:
-        logger.info(f"[TEST RUN {test_id}] Answer key loaded: {len(answer_key.files)} files with expected results")
+        logger.info(f"[TEST RUN {test_id}] Answer key loaded: {len(answer_key.periods)} periods with expected results")
     
     # Track results
     file_results: List[FileGrade] = []

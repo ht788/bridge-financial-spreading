@@ -18,7 +18,9 @@ import { testingApi } from '../../testingApi';
 import { 
   TestCompany, 
   CompanyAnswerKey,
-  ExpectedLineItem 
+  ExpectedLineItem,
+  PeriodStatements,
+  StatementAnswerKey
 } from '../../testingTypes';
 import { PDFViewer } from '../PDFViewer';
 
@@ -71,9 +73,9 @@ export const AnswerKeyEditorPage: React.FC<AnswerKeyEditorPageProps> = ({ onBack
   const [companies, setCompanies] = useState<TestCompany[]>([]);
   const [selectedCompanyId, setSelectedCompanyId] = useState<string | null>(null);
   const [answerKey, setAnswerKey] = useState<CompanyAnswerKey | null>(null);
-  const [selectedFileIndex, setSelectedFileIndex] = useState<number>(0);
   const [selectedPeriodIndex, setSelectedPeriodIndex] = useState<number>(0);
-  const [expandedFiles, setExpandedFiles] = useState<Set<number>>(new Set([0]));
+  const [selectedStatementType, setSelectedStatementType] = useState<'income' | 'balance'>('income');
+  const [expandedPeriods, setExpandedPeriods] = useState<Set<number>>(new Set([0]));
   const [status, setStatus] = useState<'loading' | 'idle' | 'saving' | 'error'>('loading');
   const [error, setError] = useState<string | null>(null);
   const [saveStatus, setSaveStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
@@ -117,9 +119,9 @@ export const AnswerKeyEditorPage: React.FC<AnswerKeyEditorPageProps> = ({ onBack
       setError(null);
       const key = await testingApi.getAnswerKey(companyId);
       setAnswerKey(key);
-      setSelectedFileIndex(0);
       setSelectedPeriodIndex(0);
-      setExpandedFiles(new Set([0]));
+      setSelectedStatementType('income');
+      setExpandedPeriods(new Set([0]));
       setHasUnsavedChanges(false);
       setStatus('idle');
     } catch (err: any) {
@@ -145,8 +147,8 @@ export const AnswerKeyEditorPage: React.FC<AnswerKeyEditorPageProps> = ({ onBack
   }, []);
 
   const handleFieldChange = useCallback((
-    fileIdx: number,
     periodIdx: number,
+    statementType: 'income' | 'balance',
     fieldName: string,
     property: keyof ExpectedLineItem,
     value: any
@@ -154,10 +156,18 @@ export const AnswerKeyEditorPage: React.FC<AnswerKeyEditorPageProps> = ({ onBack
     if (!answerKey) return;
 
     const newAnswerKey = { ...answerKey };
-    const file = { ...newAnswerKey.files[fileIdx] };
-    const period = { ...file.periods[periodIdx] };
-    const expected = { ...period.expected };
-    const field = { ...expected[fieldName] };
+    const periods = [...newAnswerKey.periods];
+    const period = { ...periods[periodIdx] };
+    
+    // Get or create the statement
+    let statement = statementType === 'income' ? period.income : period.balance;
+    if (!statement) {
+      statement = { expected: {} };
+    } else {
+      statement = { ...statement, expected: { ...statement.expected } };
+    }
+    
+    const field = { ...(statement.expected[fieldName] || { value: null, tolerance_percent: 5.0, required: false }) };
 
     // Handle value conversion
     if (property === 'value') {
@@ -170,12 +180,16 @@ export const AnswerKeyEditorPage: React.FC<AnswerKeyEditorPageProps> = ({ onBack
       field.notes = value;
     }
 
-    expected[fieldName] = field;
-    period.expected = expected;
-    file.periods = [...file.periods];
-    file.periods[periodIdx] = period;
-    newAnswerKey.files = [...newAnswerKey.files];
-    newAnswerKey.files[fileIdx] = file;
+    statement.expected[fieldName] = field;
+    
+    if (statementType === 'income') {
+      period.income = statement;
+    } else {
+      period.balance = statement;
+    }
+    
+    periods[periodIdx] = period;
+    newAnswerKey.periods = periods;
 
     setAnswerKey(newAnswerKey);
     setHasUnsavedChanges(true);
@@ -198,35 +212,44 @@ export const AnswerKeyEditorPage: React.FC<AnswerKeyEditorPageProps> = ({ onBack
     }
   };
 
-  const toggleFileExpanded = (fileIdx: number) => {
-    setExpandedFiles(prev => {
+  const togglePeriodExpanded = (periodIdx: number) => {
+    setExpandedPeriods(prev => {
       const next = new Set(prev);
-      if (next.has(fileIdx)) {
-        next.delete(fileIdx);
+      if (next.has(periodIdx)) {
+        next.delete(periodIdx);
       } else {
-        next.add(fileIdx);
+        next.add(periodIdx);
       }
       return next;
     });
   };
 
-  const selectFilePeriod = (fileIdx: number, periodIdx: number) => {
-    setSelectedFileIndex(fileIdx);
+  const selectPeriodStatement = (periodIdx: number, statementType: 'income' | 'balance') => {
     setSelectedPeriodIndex(periodIdx);
-    setExpandedFiles(prev => new Set(prev).add(fileIdx));
+    setSelectedStatementType(statementType);
+    setExpandedPeriods(prev => new Set(prev).add(periodIdx));
   };
 
-  const selectedFile = answerKey?.files[selectedFileIndex];
-  const selectedPeriod = selectedFile?.periods[selectedPeriodIndex];
+  const selectedPeriod = answerKey?.periods[selectedPeriodIndex];
+  const selectedStatement = selectedPeriod 
+    ? (selectedStatementType === 'income' ? selectedPeriod.income : selectedPeriod.balance)
+    : null;
 
-  // Get file URL for viewer
+  // Get company files for the selected period/statement (for PDF viewer reference)
+  const selectedCompany = companies.find(c => c.id === selectedCompanyId);
+  const relevantFiles = selectedCompany?.files.filter(f => 
+    f.doc_type === selectedStatementType || f.doc_type === 'auto'
+  ) || [];
+
+  // Get file URL for viewer - use the first relevant file for reference
   const getFileUrl = () => {
-    if (!selectedFile) return '';
-    return testingApi.getTestFileUrl(selectedFile.filename);
+    if (relevantFiles.length === 0) return '';
+    return testingApi.getTestFileUrl(relevantFiles[0].filename);
   };
 
-  const isExcelFile = selectedFile?.filename.toLowerCase().endsWith('.xlsx') || 
-                      selectedFile?.filename.toLowerCase().endsWith('.xls');
+  const firstRelevantFile = relevantFiles[0];
+  const isExcelFile = firstRelevantFile?.filename.toLowerCase().endsWith('.xlsx') || 
+                      firstRelevantFile?.filename.toLowerCase().endsWith('.xls');
 
   return (
     <div className="min-h-[calc(100vh-80px)] bg-gradient-to-br from-violet-50/50 via-white to-purple-50/50">
@@ -369,58 +392,69 @@ export const AnswerKeyEditorPage: React.FC<AnswerKeyEditorPageProps> = ({ onBack
                 </select>
               </div>
 
-              {/* File Tree */}
+              {/* Period Tree */}
               <div className="flex-1 overflow-y-auto p-2">
                 <div className="space-y-1">
-                  {answerKey.files.map((file, fileIdx) => (
-                    <div key={`${file.filename}-${file.doc_type}`}>
-                      {/* File Header */}
+                  {answerKey.periods.map((period, periodIdx) => (
+                    <div key={period.period_label}>
+                      {/* Period Header */}
                       <button
-                        onClick={() => toggleFileExpanded(fileIdx)}
+                        onClick={() => togglePeriodExpanded(periodIdx)}
                         className={`w-full flex items-center gap-2 px-2 py-2 rounded-lg text-left text-sm transition-colors ${
-                          selectedFileIndex === fileIdx
+                          selectedPeriodIndex === periodIdx
                             ? 'bg-violet-50 text-violet-700'
                             : 'hover:bg-gray-100 text-gray-700'
                         }`}
                       >
-                        {expandedFiles.has(fileIdx) ? (
+                        {expandedPeriods.has(periodIdx) ? (
                           <ChevronDown className="w-4 h-4 flex-shrink-0" />
                         ) : (
                           <ChevronRight className="w-4 h-4 flex-shrink-0" />
                         )}
-                        {file.filename.toLowerCase().includes('.xlsx') ? (
-                          <FileSpreadsheet className="w-4 h-4 flex-shrink-0 text-green-600" />
-                        ) : (
-                          <FileText className="w-4 h-4 flex-shrink-0 text-red-600" />
-                        )}
                         <div className="min-w-0 flex-1">
                           <div className="truncate text-xs font-medium">
-                            {file.filename.split('/').pop()}
+                            {period.period_label}
                           </div>
-                          <div className={`text-[10px] uppercase tracking-wide ${
-                            file.doc_type === 'income' ? 'text-blue-600' : 'text-emerald-600'
-                          }`}>
-                            {file.doc_type}
+                          <div className="text-[10px] text-gray-400">
+                            {[period.income && 'IS', period.balance && 'BS'].filter(Boolean).join(' + ') || 'No data'}
                           </div>
                         </div>
                       </button>
 
-                      {/* Periods */}
-                      {expandedFiles.has(fileIdx) && (
+                      {/* Statement Types */}
+                      {expandedPeriods.has(periodIdx) && (
                         <div className="ml-6 mt-1 space-y-0.5">
-                          {file.periods.map((period, periodIdx) => (
+                          {period.income && (
                             <button
-                              key={period.period_label}
-                              onClick={() => selectFilePeriod(fileIdx, periodIdx)}
-                              className={`w-full px-3 py-1.5 text-xs text-left rounded transition-colors ${
-                                selectedFileIndex === fileIdx && selectedPeriodIndex === periodIdx
+                              onClick={() => selectPeriodStatement(periodIdx, 'income')}
+                              className={`w-full px-3 py-1.5 text-xs text-left rounded transition-colors flex items-center gap-2 ${
+                                selectedPeriodIndex === periodIdx && selectedStatementType === 'income'
                                   ? 'bg-violet-100 text-violet-800 font-medium'
                                   : 'text-gray-600 hover:bg-gray-100'
                               }`}
                             >
-                              {period.period_label}
+                              <span className="w-2 h-2 rounded-full bg-blue-500"></span>
+                              Income Statement
                             </button>
-                          ))}
+                          )}
+                          {period.balance && (
+                            <button
+                              onClick={() => selectPeriodStatement(periodIdx, 'balance')}
+                              className={`w-full px-3 py-1.5 text-xs text-left rounded transition-colors flex items-center gap-2 ${
+                                selectedPeriodIndex === periodIdx && selectedStatementType === 'balance'
+                                  ? 'bg-violet-100 text-violet-800 font-medium'
+                                  : 'text-gray-600 hover:bg-gray-100'
+                              }`}
+                            >
+                              <span className="w-2 h-2 rounded-full bg-emerald-500"></span>
+                              Balance Sheet
+                            </button>
+                          )}
+                          {!period.income && !period.balance && (
+                            <div className="px-3 py-1.5 text-xs text-gray-400 italic">
+                              No statements defined
+                            </div>
+                          )}
                         </div>
                       )}
                     </div>
@@ -439,26 +473,28 @@ export const AnswerKeyEditorPage: React.FC<AnswerKeyEditorPageProps> = ({ onBack
                     <FileText className="w-4 h-4 text-red-600" />
                   )}
                   <span className="font-medium text-sm text-gray-700 truncate max-w-[300px]">
-                    {selectedFile?.filename.split('/').pop() || 'Select a file'}
+                    {firstRelevantFile?.filename.split('/').pop() || 'No source file'}
                   </span>
                 </div>
-                <a
-                  href={getFileUrl()}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="text-xs text-violet-600 hover:text-violet-800 hover:underline"
-                >
-                  Open in new tab
-                </a>
+                {firstRelevantFile && (
+                  <a
+                    href={getFileUrl()}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-xs text-violet-600 hover:text-violet-800 hover:underline"
+                  >
+                    Open in new tab
+                  </a>
+                )}
               </div>
               <div className="flex-1 bg-gray-100 overflow-hidden">
-                {selectedFile && (
+                {firstRelevantFile ? (
                   isExcelFile ? (
                     <div className="h-full flex items-center justify-center text-gray-500">
                       <div className="text-center p-6">
                         <FileSpreadsheet className="w-16 h-16 mx-auto text-green-400 mb-4" />
                         <p className="text-sm font-medium mb-2">Excel File</p>
-                        <p className="text-xs text-gray-400 mb-4">{selectedFile.filename.split('/').pop()}</p>
+                        <p className="text-xs text-gray-400 mb-4">{firstRelevantFile.filename.split('/').pop()}</p>
                         <a
                           href={getFileUrl()}
                           target="_blank"
@@ -471,8 +507,15 @@ export const AnswerKeyEditorPage: React.FC<AnswerKeyEditorPageProps> = ({ onBack
                       </div>
                     </div>
                   ) : (
-                    <PDFViewer pdfUrl={getFileUrl()} />
+                    <PDFViewer pdfUrl={getFileUrl()} compact={true} />
                   )
+                ) : (
+                  <div className="h-full flex items-center justify-center text-gray-400">
+                    <div className="text-center p-6">
+                      <FileText className="w-12 h-12 mx-auto text-gray-300 mb-3" />
+                      <p className="text-sm">No source files available for this statement type</p>
+                    </div>
+                  </div>
                 )}
               </div>
             </div>
@@ -486,27 +529,42 @@ export const AnswerKeyEditorPage: React.FC<AnswerKeyEditorPageProps> = ({ onBack
                       {selectedPeriod?.period_label || 'Select a period'}
                     </h3>
                     <p className="text-xs text-gray-500">
-                      {selectedFile?.doc_type === 'income' ? 'Income Statement' : 'Balance Sheet'} • 
-                      {selectedPeriod ? ` ${Object.keys(selectedPeriod.expected).length} fields` : ''}
+                      {selectedStatementType === 'income' ? 'Income Statement' : 'Balance Sheet'} • 
+                      {selectedStatement ? ` ${Object.keys(selectedStatement.expected).length} fields` : ' No data'}
                     </p>
+                  </div>
+                  <div className={`px-2 py-1 rounded text-xs font-medium ${
+                    selectedStatementType === 'income' 
+                      ? 'bg-blue-100 text-blue-700'
+                      : 'bg-emerald-100 text-emerald-700'
+                  }`}>
+                    {selectedStatementType === 'income' ? 'IS' : 'BS'}
                   </div>
                 </div>
               </div>
 
               <div className="flex-1 overflow-y-auto p-4">
-                {selectedPeriod && (
+                {selectedStatement && selectedStatement.expected ? (
                   <div className="space-y-3">
-                    {Object.entries(selectedPeriod.expected).map(([fieldName, field]) => (
+                    {Object.entries(selectedStatement.expected).map(([fieldName, field]) => (
                       <FieldEditor
                         key={fieldName}
                         fieldName={fieldName}
                         displayName={FIELD_DISPLAY_NAMES[fieldName] || fieldName}
                         field={field}
                         onChange={(property, value) => 
-                          handleFieldChange(selectedFileIndex, selectedPeriodIndex, fieldName, property, value)
+                          handleFieldChange(selectedPeriodIndex, selectedStatementType, fieldName, property, value)
                         }
                       />
                     ))}
+                  </div>
+                ) : (
+                  <div className="flex items-center justify-center h-full text-gray-400">
+                    <div className="text-center">
+                      <AlertCircle className="w-10 h-10 mx-auto text-gray-300 mb-3" />
+                      <p className="text-sm">No expected values defined for this statement</p>
+                      <p className="text-xs mt-1">Select a different period or statement type</p>
+                    </div>
                   </div>
                 )}
               </div>

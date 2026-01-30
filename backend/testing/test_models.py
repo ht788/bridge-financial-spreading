@@ -132,7 +132,7 @@ class ExpectedBalanceSheet(BaseModel):
 
 
 class PeriodAnswerKey(BaseModel):
-    """Answer key for a single period"""
+    """Answer key for a single period (legacy - kept for backward compatibility)"""
     period_label: str = Field(description="Period label (e.g., '2024', 'Jan 2025')")
     doc_type: str = Field(description="Document type: 'income' or 'balance'")
     expected: Dict[str, ExpectedLineItem] = Field(
@@ -142,7 +142,7 @@ class PeriodAnswerKey(BaseModel):
 
 
 class FileAnswerKey(BaseModel):
-    """Complete answer key for a single file (potentially multi-period)"""
+    """Complete answer key for a single file (legacy - kept for backward compatibility)"""
     filename: str = Field(description="Name of the file this answer key is for")
     doc_type: str = Field(description="Document type: 'income' or 'balance'")
     periods: List[PeriodAnswerKey] = Field(
@@ -151,11 +151,41 @@ class FileAnswerKey(BaseModel):
     )
 
 
+# =============================================================================
+# NEW PERIOD-BASED ANSWER KEY STRUCTURE
+# =============================================================================
+
+class StatementAnswerKey(BaseModel):
+    """Answer key for a single statement type (income or balance) within a period"""
+    expected: Dict[str, ExpectedLineItem] = Field(
+        default_factory=dict,
+        description="Expected values keyed by field name"
+    )
+
+
+class PeriodStatements(BaseModel):
+    """All statements for a single period - the new canonical structure"""
+    period_label: str = Field(description="Period label (e.g., 'FY2023', '2024', 'Q1 2025')")
+    income: Optional[StatementAnswerKey] = Field(
+        default=None,
+        description="Income statement expected values for this period"
+    )
+    balance: Optional[StatementAnswerKey] = Field(
+        default=None,
+        description="Balance sheet expected values for this period"
+    )
+
+
 class CompanyAnswerKey(BaseModel):
-    """Complete answer key for a company"""
+    """
+    Complete answer key for a company.
+    
+    Uses period-based structure where each period has income and/or balance statements.
+    This eliminates duplication when the same period appears in multiple files.
+    """
     company_id: str
     company_name: str
-    files: List[FileAnswerKey] = Field(default_factory=list)
+    periods: List[PeriodStatements] = Field(default_factory=list)
 
 
 # =============================================================================

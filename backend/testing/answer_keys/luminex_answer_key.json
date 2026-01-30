@@ -1,1212 +1,907 @@
 {
   "company_id": "luminex",
   "company_name": "Candle-Lite (Luminex)",
-  "files": [
+  "periods": [
     {
-      "filename": "Luminex/Luminex 2023 FS  - FINAL.pdf",
-      "doc_type": "income",
-      "periods": [
-        {
-          "period_label": "FY2023",
-          "doc_type": "income",
-          "expected": {
-            "revenue": {
-              "value": 234249.0,
-              "tolerance_percent": 5.0,
-              "required": true,
-              "notes": "Net sales $ 234,249"
-            },
-            "cogs": {
-              "value": 178834.0,
-              "tolerance_percent": 5.0,
-              "required": true,
-              "notes": "Cost of goods sold 178,834"
-            },
-            "gross_profit": {
-              "value": 55415.0,
-              "tolerance_percent": 5.0,
-              "required": true,
-              "notes": "Gross profit 55,415"
-            },
-            "sga": {
-              "value": 70988.0,
-              "tolerance_percent": 5.0,
-              "required": true,
-              "notes": "Operating expenses total 78,100 less D&A 7,112"
-            },
-            "research_and_development": {
-              "value": null,
-              "tolerance_percent": 5.0,
-              "required": false,
-              "notes": "Not present in document"
-            },
-            "depreciation_amortization": {
-              "value": 7112.0,
-              "tolerance_percent": 5.0,
-              "required": false,
-              "notes": "Depreciation and intangible and other asset amortization 7,112 from cash flow statement"
-            },
-            "other_operating_expenses": {
-              "value": null,
-              "tolerance_percent": 5.0,
-              "required": false,
-              "notes": "Not separately stated"
-            },
-            "total_operating_expenses": {
-              "value": 70988.0,
-              "tolerance_percent": 5.0,
-              "required": true,
-              "notes": "Operating expenses 78,100 less D&A 7,112"
-            },
-            "operating_income": {
-              "value": -22685.0,
-              "tolerance_percent": 5.0,
-              "required": true,
-              "notes": "Loss from operations before other income (expense) (22,685)"
-            },
-            "interest_expense": {
-              "value": 8786.0,
-              "tolerance_percent": 5.0,
-              "required": true,
-              "notes": "Interest expense (8,786)"
-            },
-            "interest_income": {
-              "value": null,
-              "tolerance_percent": 5.0,
-              "required": false,
-              "notes": "Not separately stated"
-            },
-            "other_income_expense": {
-              "value": -348.0,
-              "tolerance_percent": 10.0,
-              "required": false,
-              "notes": "Foreign exchange gain (loss) (162) + Other income (expense), net (186) = (348)"
-            },
-            "pretax_income": {
-              "value": -31819.0,
-              "tolerance_percent": 5.0,
-              "required": true,
-              "notes": "Loss before income tax expense (31,819)"
-            },
-            "income_tax_expense": {
-              "value": 904.0,
-              "tolerance_percent": 5.0,
-              "required": false,
-              "notes": "Income tax expense 904"
-            },
-            "net_income": {
-              "value": -32723.0,
-              "tolerance_percent": 5.0,
-              "required": true,
-              "notes": "Net loss (32,723)"
-            }
-          }
-        },
-        {
-          "period_label": "FY2022",
-          "doc_type": "income",
-          "expected": {
-            "revenue": {
-              "value": 308718.0,
-              "tolerance_percent": 5.0,
-              "required": true,
-              "notes": "Net sales $308,718 (Feb 28, 2022 comparative column)"
-            },
-            "cogs": {
-              "value": 209955.0,
-              "tolerance_percent": 5.0,
-              "required": true,
-              "notes": "Cost of goods sold 209,955"
-            },
-            "gross_profit": {
-              "value": 98763.0,
-              "tolerance_percent": 5.0,
-              "required": true,
-              "notes": "Gross profit 98,763"
-            },
-            "operating_income": {
-              "value": 6320.0,
-              "tolerance_percent": 5.0,
-              "required": true,
-              "notes": "Income from operations before other income (expense) 6,320"
-            },
-            "interest_expense": {
-              "value": 5650.0,
-              "tolerance_percent": 5.0,
-              "required": true,
-              "notes": "Interest expense (5,650)"
-            },
-            "pretax_income": {
-              "value": -275.0,
-              "tolerance_percent": 10.0,
-              "required": true,
-              "notes": "Loss before income tax expense (275)"
-            },
-            "income_tax_expense": {
-              "value": 1687.0,
-              "tolerance_percent": 5.0,
-              "required": false,
-              "notes": "Income tax expense 1,687"
-            },
-            "net_income": {
-              "value": -1962.0,
-              "tolerance_percent": 5.0,
-              "required": true,
-              "notes": "Net loss (1,962)"
-            }
+      "period_label": "FY2022",
+      "income": {
+        "expected": {
+          "revenue": {
+            "value": 308718.0,
+            "tolerance_percent": 5.0,
+            "required": true,
+            "notes": "Net sales $308,718 (Feb 28, 2022 comparative column)"
+          },
+          "cogs": {
+            "value": 209955.0,
+            "tolerance_percent": 5.0,
+            "required": true,
+            "notes": "Cost of goods sold 209,955"
+          },
+          "gross_profit": {
+            "value": 98763.0,
+            "tolerance_percent": 5.0,
+            "required": true,
+            "notes": "Gross profit 98,763"
+          },
+          "operating_income": {
+            "value": 6320.0,
+            "tolerance_percent": 5.0,
+            "required": true,
+            "notes": "Income from operations before other income (expense) 6,320"
+          },
+          "interest_expense": {
+            "value": 5650.0,
+            "tolerance_percent": 5.0,
+            "required": true,
+            "notes": "Interest expense (5,650)"
+          },
+          "pretax_income": {
+            "value": -275.0,
+            "tolerance_percent": 10.0,
+            "required": true,
+            "notes": "Loss before income tax expense (275)"
+          },
+          "income_tax_expense": {
+            "value": 1687.0,
+            "tolerance_percent": 5.0,
+            "required": false,
+            "notes": "Income tax expense 1,687"
+          },
+          "net_income": {
+            "value": -1962.0,
+            "tolerance_percent": 5.0,
+            "required": true,
+            "notes": "Net loss (1,962)"
           }
         }
-      ]
+      },
+      "balance": {
+        "expected": {
+          "cash_and_equivalents": {
+            "value": 4744.0,
+            "tolerance_percent": 5.0,
+            "required": true,
+            "notes": "Cash and cash equivalents $4,744"
+          },
+          "accounts_receivable": {
+            "value": 15684.0,
+            "tolerance_percent": 5.0,
+            "required": true,
+            "notes": "Accounts receivable, net of allowance $15,684"
+          },
+          "inventory": {
+            "value": 86090.0,
+            "tolerance_percent": 5.0,
+            "required": true,
+            "notes": "Inventories, net $86,090"
+          },
+          "total_current_assets": {
+            "value": 116376.0,
+            "tolerance_percent": 5.0,
+            "required": true,
+            "notes": "Total current assets $116,376"
+          },
+          "total_assets": {
+            "value": 159314.0,
+            "tolerance_percent": 5.0,
+            "required": true,
+            "notes": "Total assets $159,314"
+          },
+          "accounts_payable": {
+            "value": 35495.0,
+            "tolerance_percent": 5.0,
+            "required": true,
+            "notes": "Accounts payable trade $34,957 + common control $538"
+          },
+          "total_current_liabilities": {
+            "value": 59857.0,
+            "tolerance_percent": 5.0,
+            "required": true,
+            "notes": "Total current liabilities $59,857"
+          },
+          "long_term_debt": {
+            "value": 68222.0,
+            "tolerance_percent": 5.0,
+            "required": true,
+            "notes": "Long-term debt, net $68,222"
+          },
+          "total_liabilities": {
+            "value": 138503.0,
+            "tolerance_percent": 5.0,
+            "required": true,
+            "notes": "Total liabilities $138,503"
+          },
+          "total_shareholders_equity": {
+            "value": 20811.0,
+            "tolerance_percent": 5.0,
+            "required": true,
+            "notes": "Total shareholders' equity $20,811"
+          },
+          "total_liabilities_and_equity": {
+            "value": 159314.0,
+            "tolerance_percent": 5.0,
+            "required": true,
+            "notes": "Total liabilities and shareholders' equity $159,314"
+          }
+        }
+      }
     },
     {
-      "filename": "Luminex/Luminex 2023 FS  - FINAL.pdf",
-      "doc_type": "balance",
-      "periods": [
-        {
-          "period_label": "FY2023",
-          "doc_type": "balance",
-          "expected": {
-            "cash_and_equivalents": {
-              "value": 4681.0,
-              "tolerance_percent": 5.0,
-              "required": true,
-              "notes": "Cash and cash equivalents $4,681"
-            },
-            "accounts_receivable": {
-              "value": 13707.0,
-              "tolerance_percent": 5.0,
-              "required": true,
-              "notes": "Accounts receivable, net of allowance $13,707"
-            },
-            "inventory": {
-              "value": 54463.0,
-              "tolerance_percent": 5.0,
-              "required": true,
-              "notes": "Inventories, net $54,463"
-            },
-            "total_current_assets": {
-              "value": 80754.0,
-              "tolerance_percent": 5.0,
-              "required": true,
-              "notes": "Total current assets $80,754"
-            },
-            "total_assets": {
-              "value": 144337.0,
-              "tolerance_percent": 5.0,
-              "required": true,
-              "notes": "Total assets $144,337"
-            },
-            "accounts_payable": {
-              "value": 34110.0,
-              "tolerance_percent": 5.0,
-              "required": true,
-              "notes": "Accounts payable trade $33,983 + common control $127"
-            },
-            "total_current_liabilities": {
-              "value": 61768.0,
-              "tolerance_percent": 5.0,
-              "required": true,
-              "notes": "Total current liabilities $61,768"
-            },
-            "long_term_debt": {
-              "value": 24192.0,
-              "tolerance_percent": 5.0,
-              "required": true,
-              "notes": "Long-term debt, net $24,192"
-            },
-            "total_liabilities": {
-              "value": 152785.0,
-              "tolerance_percent": 5.0,
-              "required": true,
-              "notes": "Total liabilities $152,785"
-            },
-            "total_shareholders_equity": {
-              "value": -8448.0,
-              "tolerance_percent": 5.0,
-              "required": true,
-              "notes": "Total shareholders' equity (deficit) $(8,448)"
-            },
-            "total_liabilities_and_equity": {
-              "value": 144337.0,
-              "tolerance_percent": 5.0,
-              "required": true,
-              "notes": "Total liabilities and shareholders' equity $144,337"
-            }
-          }
-        },
-        {
-          "period_label": "FY2022",
-          "doc_type": "balance",
-          "expected": {
-            "cash_and_equivalents": {
-              "value": 4744.0,
-              "tolerance_percent": 5.0,
-              "required": true,
-              "notes": "Cash and cash equivalents $4,744"
-            },
-            "accounts_receivable": {
-              "value": 15684.0,
-              "tolerance_percent": 5.0,
-              "required": true,
-              "notes": "Accounts receivable, net of allowance $15,684"
-            },
-            "inventory": {
-              "value": 86090.0,
-              "tolerance_percent": 5.0,
-              "required": true,
-              "notes": "Inventories, net $86,090"
-            },
-            "total_current_assets": {
-              "value": 116376.0,
-              "tolerance_percent": 5.0,
-              "required": true,
-              "notes": "Total current assets $116,376"
-            },
-            "total_assets": {
-              "value": 159314.0,
-              "tolerance_percent": 5.0,
-              "required": true,
-              "notes": "Total assets $159,314"
-            },
-            "accounts_payable": {
-              "value": 35495.0,
-              "tolerance_percent": 5.0,
-              "required": true,
-              "notes": "Accounts payable trade $34,957 + common control $538"
-            },
-            "total_current_liabilities": {
-              "value": 59857.0,
-              "tolerance_percent": 5.0,
-              "required": true,
-              "notes": "Total current liabilities $59,857"
-            },
-            "long_term_debt": {
-              "value": 68222.0,
-              "tolerance_percent": 5.0,
-              "required": true,
-              "notes": "Long-term debt, net $68,222"
-            },
-            "total_liabilities": {
-              "value": 138503.0,
-              "tolerance_percent": 5.0,
-              "required": true,
-              "notes": "Total liabilities $138,503"
-            },
-            "total_shareholders_equity": {
-              "value": 20811.0,
-              "tolerance_percent": 5.0,
-              "required": true,
-              "notes": "Total shareholders' equity $20,811"
-            },
-            "total_liabilities_and_equity": {
-              "value": 159314.0,
-              "tolerance_percent": 5.0,
-              "required": true,
-              "notes": "Total liabilities and shareholders' equity $159,314"
-            }
+      "period_label": "FY2023",
+      "income": {
+        "expected": {
+          "revenue": {
+            "value": 234249.0,
+            "tolerance_percent": 5.0,
+            "required": true,
+            "notes": "Net sales $ 234,249"
+          },
+          "cogs": {
+            "value": 178834.0,
+            "tolerance_percent": 5.0,
+            "required": true,
+            "notes": "Cost of goods sold 178,834"
+          },
+          "gross_profit": {
+            "value": 55415.0,
+            "tolerance_percent": 5.0,
+            "required": true,
+            "notes": "Gross profit 55,415"
+          },
+          "sga": {
+            "value": 70988.0,
+            "tolerance_percent": 5.0,
+            "required": true,
+            "notes": "Operating expenses total 78,100 less D&A 7,112"
+          },
+          "research_and_development": {
+            "value": null,
+            "tolerance_percent": 5.0,
+            "required": false,
+            "notes": "Not present in document"
+          },
+          "depreciation_amortization": {
+            "value": 7112.0,
+            "tolerance_percent": 5.0,
+            "required": false,
+            "notes": "Depreciation and intangible and other asset amortization 7,112 from cash flow statement"
+          },
+          "other_operating_expenses": {
+            "value": null,
+            "tolerance_percent": 5.0,
+            "required": false,
+            "notes": "Not separately stated"
+          },
+          "total_operating_expenses": {
+            "value": 70988.0,
+            "tolerance_percent": 5.0,
+            "required": true,
+            "notes": "Operating expenses 78,100 less D&A 7,112"
+          },
+          "operating_income": {
+            "value": -22685.0,
+            "tolerance_percent": 5.0,
+            "required": true,
+            "notes": "Loss from operations before other income (expense) (22,685)"
+          },
+          "interest_expense": {
+            "value": 8786.0,
+            "tolerance_percent": 5.0,
+            "required": true,
+            "notes": "Interest expense (8,786)"
+          },
+          "interest_income": {
+            "value": null,
+            "tolerance_percent": 5.0,
+            "required": false,
+            "notes": "Not separately stated"
+          },
+          "other_income_expense": {
+            "value": -348.0,
+            "tolerance_percent": 10.0,
+            "required": false,
+            "notes": "Foreign exchange gain (loss) (162) + Other income (expense), net (186) = (348)"
+          },
+          "pretax_income": {
+            "value": -31819.0,
+            "tolerance_percent": 5.0,
+            "required": true,
+            "notes": "Loss before income tax expense (31,819)"
+          },
+          "income_tax_expense": {
+            "value": 904.0,
+            "tolerance_percent": 5.0,
+            "required": false,
+            "notes": "Income tax expense 904"
+          },
+          "net_income": {
+            "value": -32723.0,
+            "tolerance_percent": 5.0,
+            "required": true,
+            "notes": "Net loss (32,723)"
           }
         }
-      ]
+      },
+      "balance": {
+        "expected": {
+          "cash_and_equivalents": {
+            "value": 4681.0,
+            "tolerance_percent": 5.0,
+            "required": true,
+            "notes": "Cash and cash equivalents $4,681"
+          },
+          "accounts_receivable": {
+            "value": 13707.0,
+            "tolerance_percent": 5.0,
+            "required": true,
+            "notes": "Accounts receivable, net of allowance $13,707"
+          },
+          "inventory": {
+            "value": 54463.0,
+            "tolerance_percent": 5.0,
+            "required": true,
+            "notes": "Inventories, net $54,463"
+          },
+          "total_current_assets": {
+            "value": 80754.0,
+            "tolerance_percent": 5.0,
+            "required": true,
+            "notes": "Total current assets $80,754"
+          },
+          "total_assets": {
+            "value": 144337.0,
+            "tolerance_percent": 5.0,
+            "required": true,
+            "notes": "Total assets $144,337"
+          },
+          "accounts_payable": {
+            "value": 34110.0,
+            "tolerance_percent": 5.0,
+            "required": true,
+            "notes": "Accounts payable trade $33,983 + common control $127"
+          },
+          "total_current_liabilities": {
+            "value": 61768.0,
+            "tolerance_percent": 5.0,
+            "required": true,
+            "notes": "Total current liabilities $61,768"
+          },
+          "long_term_debt": {
+            "value": 24192.0,
+            "tolerance_percent": 5.0,
+            "required": true,
+            "notes": "Long-term debt, net $24,192"
+          },
+          "total_liabilities": {
+            "value": 152785.0,
+            "tolerance_percent": 5.0,
+            "required": true,
+            "notes": "Total liabilities $152,785"
+          },
+          "total_shareholders_equity": {
+            "value": -8448.0,
+            "tolerance_percent": 5.0,
+            "required": true,
+            "notes": "Total shareholders' equity (deficit) $(8,448)"
+          },
+          "total_liabilities_and_equity": {
+            "value": 144337.0,
+            "tolerance_percent": 5.0,
+            "required": true,
+            "notes": "Total liabilities and shareholders' equity $144,337"
+          }
+        }
+      }
     },
     {
-      "filename": "Luminex/Luminex 2024 FS FINAL.pdf",
-      "doc_type": "income",
-      "periods": [
-        {
-          "period_label": "FY2024",
-          "doc_type": "income",
-          "expected": {
-            "revenue": {
-              "value": 225747.0,
-              "tolerance_percent": 5.0,
-              "required": true,
-              "notes": "Net sales $ 225,747"
-            },
-            "cogs": {
-              "value": 154541.0,
-              "tolerance_percent": 5.0,
-              "required": true,
-              "notes": "Cost of goods sold 154,541"
-            },
-            "gross_profit": {
-              "value": 71206.0,
-              "tolerance_percent": 5.0,
-              "required": true,
-              "notes": "Gross profit 71,206"
-            },
-            "sga": {
-              "value": 64360.0,
-              "tolerance_percent": 5.0,
-              "required": true,
-              "notes": "Operating expenses total 71,010 less D&A 6,650"
-            },
-            "research_and_development": {
-              "value": null,
-              "tolerance_percent": 5.0,
-              "required": false,
-              "notes": "Not present in document"
-            },
-            "depreciation_amortization": {
-              "value": 6650.0,
-              "tolerance_percent": 5.0,
-              "required": false,
-              "notes": "Depreciation and intangible and other asset amortization 6,650 from cash flow statement"
-            },
-            "other_operating_expenses": {
-              "value": null,
-              "tolerance_percent": 5.0,
-              "required": false,
-              "notes": "Not separately stated"
-            },
-            "total_operating_expenses": {
-              "value": 64360.0,
-              "tolerance_percent": 5.0,
-              "required": true,
-              "notes": "Operating expenses 71,010 less D&A 6,650"
-            },
-            "operating_income": {
-              "value": 196.0,
-              "tolerance_percent": 5.0,
-              "required": true,
-              "notes": "Income from operations before other income (expense) 196"
-            },
-            "interest_expense": {
-              "value": 10240.0,
-              "tolerance_percent": 5.0,
-              "required": true,
-              "notes": "Interest expense, net (10,240)"
-            },
-            "interest_income": {
-              "value": null,
-              "tolerance_percent": 5.0,
-              "required": false,
-              "notes": "Netted into interest expense, net"
-            },
-            "other_income_expense": {
-              "value": -15.0,
-              "tolerance_percent": 10.0,
-              "required": false,
-              "notes": "Foreign exchange gain (loss) 43 + Other expense, net (58) = (15)"
-            },
-            "pretax_income": {
-              "value": -10059.0,
-              "tolerance_percent": 5.0,
-              "required": true,
-              "notes": "Loss before income tax expense (10,059)"
-            },
-            "income_tax_expense": {
-              "value": 885.0,
-              "tolerance_percent": 5.0,
-              "required": false,
-              "notes": "Income tax expense 885"
-            },
-            "net_income": {
-              "value": -10944.0,
-              "tolerance_percent": 5.0,
-              "required": true,
-              "notes": "Net loss (10,944)"
-            }
-          }
-        },
-        {
-          "period_label": "FY2023",
-          "doc_type": "income",
-          "expected": {
-            "revenue": {
-              "value": 234249.0,
-              "tolerance_percent": 5.0,
-              "required": true,
-              "notes": "Net sales $234,249 (Feb 28, 2023 comparative column)"
-            },
-            "cogs": {
-              "value": 178834.0,
-              "tolerance_percent": 5.0,
-              "required": true,
-              "notes": "Cost of goods sold 178,834"
-            },
-            "gross_profit": {
-              "value": 55415.0,
-              "tolerance_percent": 5.0,
-              "required": true,
-              "notes": "Gross profit 55,415"
-            },
-            "operating_income": {
-              "value": -22685.0,
-              "tolerance_percent": 5.0,
-              "required": true,
-              "notes": "Loss from operations before other income (expense) (22,685)"
-            },
-            "interest_expense": {
-              "value": 8786.0,
-              "tolerance_percent": 5.0,
-              "required": true,
-              "notes": "Interest expense (8,786)"
-            },
-            "pretax_income": {
-              "value": -31819.0,
-              "tolerance_percent": 5.0,
-              "required": true,
-              "notes": "Loss before income tax expense (31,819)"
-            },
-            "income_tax_expense": {
-              "value": 904.0,
-              "tolerance_percent": 5.0,
-              "required": false,
-              "notes": "Income tax expense 904"
-            },
-            "net_income": {
-              "value": -32723.0,
-              "tolerance_percent": 5.0,
-              "required": true,
-              "notes": "Net loss (32,723)"
-            }
+      "period_label": "FY2024",
+      "income": {
+        "expected": {
+          "revenue": {
+            "value": 225747.0,
+            "tolerance_percent": 5.0,
+            "required": true,
+            "notes": "Net sales $ 225,747"
+          },
+          "cogs": {
+            "value": 154541.0,
+            "tolerance_percent": 5.0,
+            "required": true,
+            "notes": "Cost of goods sold 154,541"
+          },
+          "gross_profit": {
+            "value": 71206.0,
+            "tolerance_percent": 5.0,
+            "required": true,
+            "notes": "Gross profit 71,206"
+          },
+          "sga": {
+            "value": 64360.0,
+            "tolerance_percent": 5.0,
+            "required": true,
+            "notes": "Operating expenses total 71,010 less D&A 6,650"
+          },
+          "research_and_development": {
+            "value": null,
+            "tolerance_percent": 5.0,
+            "required": false,
+            "notes": "Not present in document"
+          },
+          "depreciation_amortization": {
+            "value": 6650.0,
+            "tolerance_percent": 5.0,
+            "required": false,
+            "notes": "Depreciation and intangible and other asset amortization 6,650 from cash flow statement"
+          },
+          "other_operating_expenses": {
+            "value": null,
+            "tolerance_percent": 5.0,
+            "required": false,
+            "notes": "Not separately stated"
+          },
+          "total_operating_expenses": {
+            "value": 64360.0,
+            "tolerance_percent": 5.0,
+            "required": true,
+            "notes": "Operating expenses 71,010 less D&A 6,650"
+          },
+          "operating_income": {
+            "value": 196.0,
+            "tolerance_percent": 5.0,
+            "required": true,
+            "notes": "Income from operations before other income (expense) 196"
+          },
+          "interest_expense": {
+            "value": 10240.0,
+            "tolerance_percent": 5.0,
+            "required": true,
+            "notes": "Interest expense, net (10,240)"
+          },
+          "interest_income": {
+            "value": null,
+            "tolerance_percent": 5.0,
+            "required": false,
+            "notes": "Netted into interest expense, net"
+          },
+          "other_income_expense": {
+            "value": -15.0,
+            "tolerance_percent": 10.0,
+            "required": false,
+            "notes": "Foreign exchange gain (loss) 43 + Other expense, net (58) = (15)"
+          },
+          "pretax_income": {
+            "value": -10059.0,
+            "tolerance_percent": 5.0,
+            "required": true,
+            "notes": "Loss before income tax expense (10,059)"
+          },
+          "income_tax_expense": {
+            "value": 885.0,
+            "tolerance_percent": 5.0,
+            "required": false,
+            "notes": "Income tax expense 885"
+          },
+          "net_income": {
+            "value": -10944.0,
+            "tolerance_percent": 5.0,
+            "required": true,
+            "notes": "Net loss (10,944)"
           }
         }
-      ]
+      },
+      "balance": {
+        "expected": {
+          "cash_and_equivalents": {
+            "value": 7267.0,
+            "tolerance_percent": 5.0,
+            "required": true,
+            "notes": "Cash and cash equivalents $7,267"
+          },
+          "accounts_receivable": {
+            "value": 15704.0,
+            "tolerance_percent": 5.0,
+            "required": true,
+            "notes": "Accounts receivable, net of allowance $15,704"
+          },
+          "inventory": {
+            "value": 54429.0,
+            "tolerance_percent": 5.0,
+            "required": true,
+            "notes": "Inventories, net $54,429"
+          },
+          "prepaid_and_other_current": {
+            "value": 8869.0,
+            "tolerance_percent": 5.0,
+            "required": false,
+            "notes": "Prepaid expenses and other current assets $8,869"
+          },
+          "total_current_assets": {
+            "value": 86269.0,
+            "tolerance_percent": 5.0,
+            "required": true,
+            "notes": "Total current assets $86,269"
+          },
+          "net_ppe": {
+            "value": 22142.0,
+            "tolerance_percent": 5.0,
+            "required": false,
+            "notes": "Property, plant and equipment, net $22,142"
+          },
+          "goodwill_and_intangibles": {
+            "value": 3715.0,
+            "tolerance_percent": 5.0,
+            "required": false,
+            "notes": "Intangible assets, net $3,715"
+          },
+          "total_assets": {
+            "value": 134887.0,
+            "tolerance_percent": 5.0,
+            "required": true,
+            "notes": "Total assets $134,887"
+          },
+          "accounts_payable": {
+            "value": 23382.0,
+            "tolerance_percent": 5.0,
+            "required": true,
+            "notes": "Accounts payable trade $23,255 + common control $127"
+          },
+          "current_portion_ltd": {
+            "value": 175.0,
+            "tolerance_percent": 5.0,
+            "required": false,
+            "notes": "Current portion long-term debt $175"
+          },
+          "total_current_liabilities": {
+            "value": 52169.0,
+            "tolerance_percent": 5.0,
+            "required": true,
+            "notes": "Total current liabilities $52,169"
+          },
+          "long_term_debt": {
+            "value": 42984.0,
+            "tolerance_percent": 5.0,
+            "required": true,
+            "notes": "Long-term debt, net $42,984"
+          },
+          "total_liabilities": {
+            "value": 154522.0,
+            "tolerance_percent": 5.0,
+            "required": true,
+            "notes": "Total liabilities $154,522"
+          },
+          "total_shareholders_equity": {
+            "value": -19635.0,
+            "tolerance_percent": 5.0,
+            "required": true,
+            "notes": "Total shareholders' equity (deficit) $(19,635)"
+          },
+          "total_liabilities_and_equity": {
+            "value": 134887.0,
+            "tolerance_percent": 5.0,
+            "required": true,
+            "notes": "Total liabilities and shareholders' equity (deficit) $134,887"
+          }
+        }
+      }
     },
     {
-      "filename": "Luminex/Luminex 2024 FS FINAL.pdf",
-      "doc_type": "balance",
-      "periods": [
-        {
-          "period_label": "FY2024",
-          "doc_type": "balance",
-          "expected": {
-            "cash_and_equivalents": {
-              "value": 7267.0,
-              "tolerance_percent": 5.0,
-              "required": true,
-              "notes": "Cash and cash equivalents $7,267"
-            },
-            "accounts_receivable": {
-              "value": 15704.0,
-              "tolerance_percent": 5.0,
-              "required": true,
-              "notes": "Accounts receivable, net of allowance $15,704"
-            },
-            "inventory": {
-              "value": 54429.0,
-              "tolerance_percent": 5.0,
-              "required": true,
-              "notes": "Inventories, net $54,429"
-            },
-            "total_current_assets": {
-              "value": 86269.0,
-              "tolerance_percent": 5.0,
-              "required": true,
-              "notes": "Total current assets $86,269"
-            },
-            "total_assets": {
-              "value": 134887.0,
-              "tolerance_percent": 5.0,
-              "required": true,
-              "notes": "Total assets $134,887"
-            },
-            "accounts_payable": {
-              "value": 23382.0,
-              "tolerance_percent": 5.0,
-              "required": true,
-              "notes": "Accounts payable trade $23,255 + common control $127"
-            },
-            "total_current_liabilities": {
-              "value": 52169.0,
-              "tolerance_percent": 5.0,
-              "required": true,
-              "notes": "Total current liabilities $52,169"
-            },
-            "long_term_debt": {
-              "value": 42984.0,
-              "tolerance_percent": 5.0,
-              "required": true,
-              "notes": "Long-term debt, net $42,984"
-            },
-            "total_liabilities": {
-              "value": 154522.0,
-              "tolerance_percent": 5.0,
-              "required": true,
-              "notes": "Total liabilities $154,522"
-            },
-            "total_shareholders_equity": {
-              "value": -19635.0,
-              "tolerance_percent": 5.0,
-              "required": true,
-              "notes": "Total shareholders' equity (deficit) $(19,635)"
-            },
-            "total_liabilities_and_equity": {
-              "value": 134887.0,
-              "tolerance_percent": 5.0,
-              "required": true,
-              "notes": "Total liabilities and shareholders' equity (deficit) $134,887"
-            }
-          }
-        },
-        {
-          "period_label": "FY2023",
-          "doc_type": "balance",
-          "expected": {
-            "cash_and_equivalents": {
-              "value": 4681.0,
-              "tolerance_percent": 5.0,
-              "required": true,
-              "notes": "Cash and cash equivalents $4,681 (comparative column)"
-            },
-            "accounts_receivable": {
-              "value": 13707.0,
-              "tolerance_percent": 5.0,
-              "required": true,
-              "notes": "Accounts receivable, net of allowance $13,707"
-            },
-            "inventory": {
-              "value": 54463.0,
-              "tolerance_percent": 5.0,
-              "required": true,
-              "notes": "Inventories, net $54,463"
-            },
-            "total_current_assets": {
-              "value": 80754.0,
-              "tolerance_percent": 5.0,
-              "required": true,
-              "notes": "Total current assets $80,754"
-            },
-            "total_assets": {
-              "value": 135579.0,
-              "tolerance_percent": 5.0,
-              "required": true,
-              "notes": "Total assets $135,579 (restated in 2024 report)"
-            },
-            "accounts_payable": {
-              "value": 34110.0,
-              "tolerance_percent": 5.0,
-              "required": true,
-              "notes": "Accounts payable trade $33,983 + common control $127"
-            },
-            "total_current_liabilities": {
-              "value": 61768.0,
-              "tolerance_percent": 5.0,
-              "required": true,
-              "notes": "Total current liabilities $61,768"
-            },
-            "long_term_debt": {
-              "value": 24192.0,
-              "tolerance_percent": 5.0,
-              "required": true,
-              "notes": "Long-term debt, net $24,192"
-            },
-            "total_liabilities": {
-              "value": 144027.0,
-              "tolerance_percent": 5.0,
-              "required": true,
-              "notes": "Total liabilities $144,027 (restated in 2024 report)"
-            },
-            "total_shareholders_equity": {
-              "value": -8448.0,
-              "tolerance_percent": 5.0,
-              "required": true,
-              "notes": "Total shareholders' equity (deficit) $(8,448)"
-            },
-            "total_liabilities_and_equity": {
-              "value": 135579.0,
-              "tolerance_percent": 5.0,
-              "required": true,
-              "notes": "Total liabilities and shareholders' equity (deficit) $135,579"
-            }
+      "period_label": "FY2025",
+      "income": {
+        "expected": {
+          "revenue": {
+            "value": 191939.0,
+            "tolerance_percent": 5.0,
+            "required": true,
+            "notes": "Net sales $ 191,939"
+          },
+          "cogs": {
+            "value": 127810.0,
+            "tolerance_percent": 5.0,
+            "required": true,
+            "notes": "Cost of goods sold 127,810"
+          },
+          "gross_profit": {
+            "value": 64129.0,
+            "tolerance_percent": 5.0,
+            "required": true,
+            "notes": "Gross profit 64,129"
+          },
+          "sga": {
+            "value": 55264.0,
+            "tolerance_percent": 5.0,
+            "required": true,
+            "notes": "Operating expenses total 61,119 less D&A 5,855"
+          },
+          "research_and_development": {
+            "value": null,
+            "tolerance_percent": 5.0,
+            "required": false,
+            "notes": "Not present in document"
+          },
+          "depreciation_amortization": {
+            "value": 5855.0,
+            "tolerance_percent": 5.0,
+            "required": false,
+            "notes": "Depreciation and intangible and other asset amortization 5,855 from cash flow statement"
+          },
+          "other_operating_expenses": {
+            "value": null,
+            "tolerance_percent": 5.0,
+            "required": false,
+            "notes": "Not separately stated"
+          },
+          "total_operating_expenses": {
+            "value": 55264.0,
+            "tolerance_percent": 5.0,
+            "required": true,
+            "notes": "Operating expenses 61,119 less D&A 5,855"
+          },
+          "operating_income": {
+            "value": 3010.0,
+            "tolerance_percent": 5.0,
+            "required": true,
+            "notes": "Income from operations before other income (expense) 3,010"
+          },
+          "interest_expense": {
+            "value": 11832.0,
+            "tolerance_percent": 5.0,
+            "required": true,
+            "notes": "Interest expense, net (11,832)"
+          },
+          "interest_income": {
+            "value": null,
+            "tolerance_percent": 5.0,
+            "required": false,
+            "notes": "Netted into interest expense, net"
+          },
+          "other_income_expense": {
+            "value": -476.0,
+            "tolerance_percent": 10.0,
+            "required": false,
+            "notes": "Foreign exchange gain (loss) (55) + Other expense, net (421) = (476)"
+          },
+          "pretax_income": {
+            "value": -9289.0,
+            "tolerance_percent": 5.0,
+            "required": true,
+            "notes": "Loss before income tax expense (9,289)"
+          },
+          "income_tax_expense": {
+            "value": 283.0,
+            "tolerance_percent": 5.0,
+            "required": false,
+            "notes": "Income tax expense 283"
+          },
+          "net_income": {
+            "value": -9581.0,
+            "tolerance_percent": 5.0,
+            "required": true,
+            "notes": "Net loss (9,581)"
           }
         }
-      ]
+      },
+      "balance": {
+        "expected": {
+          "cash_and_equivalents": {
+            "value": 6001.0,
+            "tolerance_percent": 5.0,
+            "required": true,
+            "notes": "Cash and cash equivalents $6,001 from Feb 28, 2025 balance sheet"
+          },
+          "accounts_receivable": {
+            "value": 13636.0,
+            "tolerance_percent": 5.0,
+            "required": true,
+            "notes": "Accounts receivable, net of allowance $13,636"
+          },
+          "inventory": {
+            "value": 55731.0,
+            "tolerance_percent": 5.0,
+            "required": true,
+            "notes": "Inventories, net $55,731"
+          },
+          "prepaid_and_other_current": {
+            "value": 8719.0,
+            "tolerance_percent": 5.0,
+            "required": false,
+            "notes": "Prepaid expenses and other current assets $8,719"
+          },
+          "total_current_assets": {
+            "value": 84087.0,
+            "tolerance_percent": 5.0,
+            "required": true,
+            "notes": "Total current assets $84,087"
+          },
+          "net_ppe": {
+            "value": 19889.0,
+            "tolerance_percent": 5.0,
+            "required": false,
+            "notes": "Property, plant and equipment, net $19,889"
+          },
+          "goodwill_and_intangibles": {
+            "value": 3075.0,
+            "tolerance_percent": 5.0,
+            "required": false,
+            "notes": "Intangible assets, net $3,075"
+          },
+          "other_noncurrent_assets": {
+            "value": 20153.0,
+            "tolerance_percent": 10.0,
+            "required": false,
+            "notes": "ROU operating $15,978 + ROU finance $741 + Deferred tax $165 + Other assets $3,269"
+          },
+          "total_assets": {
+            "value": 127204.0,
+            "tolerance_percent": 5.0,
+            "required": true,
+            "notes": "Total assets $127,204"
+          },
+          "accounts_payable": {
+            "value": 27238.0,
+            "tolerance_percent": 5.0,
+            "required": true,
+            "notes": "Accounts payable trade $27,125 + common control $113"
+          },
+          "current_portion_ltd": {
+            "value": 49963.0,
+            "tolerance_percent": 5.0,
+            "required": false,
+            "notes": "Current portion long-term debt $49,963"
+          },
+          "other_current_liabilities": {
+            "value": 23339.0,
+            "tolerance_percent": 10.0,
+            "required": false,
+            "notes": "Operating lease $1,883 + Finance lease $141 + Financing obligation $5,343 + Accrued payroll $393 + Sales allowance $1,253 + Deferred revenue $1,847 + Other accrued $12,477"
+          },
+          "total_current_liabilities": {
+            "value": 100538.0,
+            "tolerance_percent": 5.0,
+            "required": true,
+            "notes": "Total current liabilities $100,538"
+          },
+          "long_term_debt": {
+            "value": 1062.0,
+            "tolerance_percent": 5.0,
+            "required": true,
+            "notes": "Long-term debt, net $1,062"
+          },
+          "other_noncurrent_liabilities": {
+            "value": 55321.0,
+            "tolerance_percent": 10.0,
+            "required": false,
+            "notes": "Operating lease $14,168 + Finance lease $239 + Financing obligation $38,634 + Deferred tax $411 + Other LT liabilities $1,869"
+          },
+          "total_liabilities": {
+            "value": 156921.0,
+            "tolerance_percent": 5.0,
+            "required": true,
+            "notes": "Total liabilities $156,921"
+          },
+          "total_shareholders_equity": {
+            "value": -29717.0,
+            "tolerance_percent": 5.0,
+            "required": true,
+            "notes": "Total shareholders' deficit $(29,717)"
+          },
+          "total_liabilities_and_equity": {
+            "value": 127204.0,
+            "tolerance_percent": 5.0,
+            "required": true,
+            "notes": "Total liabilities and shareholders' deficit $127,204"
+          }
+        }
+      }
     },
     {
-      "filename": "Luminex/Luminex 2025 FS v2 6.24.pdf",
-      "doc_type": "income",
-      "periods": [
-        {
-          "period_label": "FY2025",
-          "doc_type": "income",
-          "expected": {
-            "revenue": {
-              "value": 191939.0,
-              "tolerance_percent": 5.0,
-              "required": true,
-              "notes": "Net sales $ 191,939"
-            },
-            "cogs": {
-              "value": 127810.0,
-              "tolerance_percent": 5.0,
-              "required": true,
-              "notes": "Cost of goods sold 127,810"
-            },
-            "gross_profit": {
-              "value": 64129.0,
-              "tolerance_percent": 5.0,
-              "required": true,
-              "notes": "Gross profit 64,129"
-            },
-            "sga": {
-              "value": 55264.0,
-              "tolerance_percent": 5.0,
-              "required": true,
-              "notes": "Operating expenses total 61,119 less D&A 5,855"
-            },
-            "research_and_development": {
-              "value": null,
-              "tolerance_percent": 5.0,
-              "required": false,
-              "notes": "Not present in document"
-            },
-            "depreciation_amortization": {
-              "value": 5855.0,
-              "tolerance_percent": 5.0,
-              "required": false,
-              "notes": "Depreciation and intangible and other asset amortization 5,855 from cash flow statement"
-            },
-            "other_operating_expenses": {
-              "value": null,
-              "tolerance_percent": 5.0,
-              "required": false,
-              "notes": "Not separately stated"
-            },
-            "total_operating_expenses": {
-              "value": 55264.0,
-              "tolerance_percent": 5.0,
-              "required": true,
-              "notes": "Operating expenses 61,119 less D&A 5,855"
-            },
-            "operating_income": {
-              "value": 3010.0,
-              "tolerance_percent": 5.0,
-              "required": true,
-              "notes": "Income from operations before other income (expense) 3,010"
-            },
-            "interest_expense": {
-              "value": 11832.0,
-              "tolerance_percent": 5.0,
-              "required": true,
-              "notes": "Interest expense, net (11,832)"
-            },
-            "interest_income": {
-              "value": null,
-              "tolerance_percent": 5.0,
-              "required": false,
-              "notes": "Netted into interest expense, net"
-            },
-            "other_income_expense": {
-              "value": -476.0,
-              "tolerance_percent": 10.0,
-              "required": false,
-              "notes": "Foreign exchange gain (loss) (55) + Other expense, net (421) = (476)"
-            },
-            "pretax_income": {
-              "value": -9289.0,
-              "tolerance_percent": 5.0,
-              "required": true,
-              "notes": "Loss before income tax expense (9,289)"
-            },
-            "income_tax_expense": {
-              "value": 283.0,
-              "tolerance_percent": 5.0,
-              "required": false,
-              "notes": "Income tax expense 283"
-            },
-            "net_income": {
-              "value": -9581.0,
-              "tolerance_percent": 5.0,
-              "required": true,
-              "notes": "Net loss (9,581)"
-            }
-          }
-        },
-        {
-          "period_label": "FY2024",
-          "doc_type": "income",
-          "expected": {
-            "revenue": {
-              "value": 225747.0,
-              "tolerance_percent": 5.0,
-              "required": true,
-              "notes": "Net sales $225,747 (Feb 29, 2024 comparative column)"
-            },
-            "cogs": {
-              "value": 154541.0,
-              "tolerance_percent": 5.0,
-              "required": true,
-              "notes": "Cost of goods sold 154,541"
-            },
-            "gross_profit": {
-              "value": 71206.0,
-              "tolerance_percent": 5.0,
-              "required": true,
-              "notes": "Gross profit 71,206"
-            },
-            "operating_income": {
-              "value": 196.0,
-              "tolerance_percent": 5.0,
-              "required": true,
-              "notes": "Income from operations before other income (expense) 196"
-            },
-            "interest_expense": {
-              "value": 10240.0,
-              "tolerance_percent": 5.0,
-              "required": true,
-              "notes": "Interest expense, net (10,240)"
-            },
-            "pretax_income": {
-              "value": -10059.0,
-              "tolerance_percent": 5.0,
-              "required": true,
-              "notes": "Loss before income tax expense (10,059)"
-            },
-            "income_tax_expense": {
-              "value": 885.0,
-              "tolerance_percent": 5.0,
-              "required": false,
-              "notes": "Income tax expense 885"
-            },
-            "net_income": {
-              "value": -10944.0,
-              "tolerance_percent": 5.0,
-              "required": true,
-              "notes": "Net loss (10,944)"
-            }
+      "period_label": "FY2026 YTD",
+      "income": {
+        "expected": {
+          "revenue": {
+            "value": 81821.35,
+            "tolerance_percent": 5.0,
+            "required": true,
+            "notes": "Net Sales from Excel Total column (sum of monthly)"
+          },
+          "cogs": {
+            "value": 71093.62,
+            "tolerance_percent": 5.0,
+            "required": true,
+            "notes": "Cost of Goods Sold (Excl. Depr) from Excel Total column"
+          },
+          "gross_profit": {
+            "value": 10727.73,
+            "tolerance_percent": 5.0,
+            "required": true,
+            "notes": "Gross Profit from Excel Total column"
+          },
+          "sga": {
+            "value": 12663.96,
+            "tolerance_percent": 5.0,
+            "required": true,
+            "notes": "SG&A (Excl. Depr) from Excel Total column"
+          },
+          "research_and_development": {
+            "value": null,
+            "tolerance_percent": 5.0,
+            "required": false,
+            "notes": "Not present in document"
+          },
+          "depreciation_amortization": {
+            "value": 3162.49,
+            "tolerance_percent": 10.0,
+            "required": false,
+            "notes": "Sum of all depreciation/amortization lines: Production 2,383.02 + SG&A 56.48 + ROU Finance 357.79 + ROU Operating COS 19.31 + ROU Operating SG&A 259.43 + LT assets 86.46"
+          },
+          "other_operating_expenses": {
+            "value": 3448.95,
+            "tolerance_percent": 10.0,
+            "required": false,
+            "notes": "Management Fees 500 + Other corporate expenses 2,933.10 + Other Expenses OH 185.93 - Intercompany Markup (171.08)"
+          },
+          "total_operating_expenses": {
+            "value": null,
+            "tolerance_percent": 5.0,
+            "required": false,
+            "notes": "Not directly stated in Excel format"
+          },
+          "operating_income": {
+            "value": -1936.23,
+            "tolerance_percent": 5.0,
+            "required": true,
+            "notes": "Operating Income from Excel Total column (before D&A add-back)"
+          },
+          "interest_expense": {
+            "value": 12282.27,
+            "tolerance_percent": 5.0,
+            "required": true,
+            "notes": "Interest expenses from Excel Total column"
+          },
+          "interest_income": {
+            "value": null,
+            "tolerance_percent": 5.0,
+            "required": false,
+            "notes": "Not separately stated"
+          },
+          "other_income_expense": {
+            "value": -479.35,
+            "tolerance_percent": 10.0,
+            "required": false,
+            "notes": "Other (income)/expense from Excel Total column (shown as expense)"
+          },
+          "pretax_income": {
+            "value": null,
+            "tolerance_percent": 5.0,
+            "required": false,
+            "notes": "Not directly stated in Excel format"
+          },
+          "income_tax_expense": {
+            "value": 64.96,
+            "tolerance_percent": 5.0,
+            "required": false,
+            "notes": "Tax from Excel Total column"
+          },
+          "net_income": {
+            "value": -22644.73,
+            "tolerance_percent": 5.0,
+            "required": true,
+            "notes": "Net Income from Excel Total column"
           }
         }
-      ]
-    },
-    {
-      "filename": "Luminex/Luminex 2025 FS v2 6.24.pdf",
-      "doc_type": "balance",
-      "periods": [
-        {
-          "period_label": "FY2025",
-          "doc_type": "balance",
-          "expected": {
-            "cash_and_equivalents": {
-              "value": 6001.0,
-              "tolerance_percent": 5.0,
-              "required": true,
-              "notes": "Cash and cash equivalents $6,001 from Feb 28, 2025 balance sheet"
-            },
-            "accounts_receivable": {
-              "value": 13636.0,
-              "tolerance_percent": 5.0,
-              "required": true,
-              "notes": "Accounts receivable, net of allowance $13,636"
-            },
-            "inventory": {
-              "value": 55731.0,
-              "tolerance_percent": 5.0,
-              "required": true,
-              "notes": "Inventories, net $55,731"
-            },
-            "prepaid_and_other_current": {
-              "value": 8719.0,
-              "tolerance_percent": 5.0,
-              "required": false,
-              "notes": "Prepaid expenses and other current assets $8,719"
-            },
-            "total_current_assets": {
-              "value": 84087.0,
-              "tolerance_percent": 5.0,
-              "required": true,
-              "notes": "Total current assets $84,087"
-            },
-            "net_ppe": {
-              "value": 19889.0,
-              "tolerance_percent": 5.0,
-              "required": false,
-              "notes": "Property, plant and equipment, net $19,889"
-            },
-            "goodwill_and_intangibles": {
-              "value": 3075.0,
-              "tolerance_percent": 5.0,
-              "required": false,
-              "notes": "Intangible assets, net $3,075"
-            },
-            "other_noncurrent_assets": {
-              "value": 20153.0,
-              "tolerance_percent": 10.0,
-              "required": false,
-              "notes": "ROU operating $15,978 + ROU finance $741 + Deferred tax $165 + Other assets $3,269"
-            },
-            "total_assets": {
-              "value": 127204.0,
-              "tolerance_percent": 5.0,
-              "required": true,
-              "notes": "Total assets $127,204"
-            },
-            "accounts_payable": {
-              "value": 27238.0,
-              "tolerance_percent": 5.0,
-              "required": true,
-              "notes": "Accounts payable trade $27,125 + common control $113"
-            },
-            "current_portion_ltd": {
-              "value": 49963.0,
-              "tolerance_percent": 5.0,
-              "required": false,
-              "notes": "Current portion long-term debt $49,963"
-            },
-            "other_current_liabilities": {
-              "value": 23339.0,
-              "tolerance_percent": 10.0,
-              "required": false,
-              "notes": "Operating lease $1,883 + Finance lease $141 + Financing obligation $5,343 + Accrued payroll $393 + Sales allowance $1,253 + Deferred revenue $1,847 + Other accrued $12,477"
-            },
-            "total_current_liabilities": {
-              "value": 100538.0,
-              "tolerance_percent": 5.0,
-              "required": true,
-              "notes": "Total current liabilities $100,538"
-            },
-            "long_term_debt": {
-              "value": 1062.0,
-              "tolerance_percent": 5.0,
-              "required": true,
-              "notes": "Long-term debt, net $1,062"
-            },
-            "other_noncurrent_liabilities": {
-              "value": 55321.0,
-              "tolerance_percent": 10.0,
-              "required": false,
-              "notes": "Operating lease $14,168 + Finance lease $239 + Financing obligation $38,634 + Deferred tax $411 + Other LT liabilities $1,869"
-            },
-            "total_liabilities": {
-              "value": 156921.0,
-              "tolerance_percent": 5.0,
-              "required": true,
-              "notes": "Total liabilities $156,921"
-            },
-            "total_shareholders_equity": {
-              "value": -29717.0,
-              "tolerance_percent": 5.0,
-              "required": true,
-              "notes": "Total shareholders' deficit $(29,717)"
-            },
-            "total_liabilities_and_equity": {
-              "value": 127204.0,
-              "tolerance_percent": 5.0,
-              "required": true,
-              "notes": "Total liabilities and shareholders' deficit $127,204"
-            }
-          }
-        },
-        {
-          "period_label": "FY2024",
-          "doc_type": "balance",
-          "expected": {
-            "cash_and_equivalents": {
-              "value": 7267.0,
-              "tolerance_percent": 5.0,
-              "required": true,
-              "notes": "Cash and cash equivalents $7,267 from Feb 29, 2024 balance sheet"
-            },
-            "accounts_receivable": {
-              "value": 15704.0,
-              "tolerance_percent": 5.0,
-              "required": true,
-              "notes": "Accounts receivable, net of allowance $15,704"
-            },
-            "inventory": {
-              "value": 54429.0,
-              "tolerance_percent": 5.0,
-              "required": true,
-              "notes": "Inventories, net $54,429"
-            },
-            "prepaid_and_other_current": {
-              "value": 8869.0,
-              "tolerance_percent": 5.0,
-              "required": false,
-              "notes": "Prepaid expenses and other current assets $8,869"
-            },
-            "total_current_assets": {
-              "value": 86269.0,
-              "tolerance_percent": 5.0,
-              "required": true,
-              "notes": "Total current assets $86,269"
-            },
-            "net_ppe": {
-              "value": 22142.0,
-              "tolerance_percent": 5.0,
-              "required": false,
-              "notes": "Property, plant and equipment, net $22,142"
-            },
-            "goodwill_and_intangibles": {
-              "value": 3715.0,
-              "tolerance_percent": 5.0,
-              "required": false,
-              "notes": "Intangible assets, net $3,715"
-            },
-            "total_assets": {
-              "value": 134887.0,
-              "tolerance_percent": 5.0,
-              "required": true,
-              "notes": "Total assets $134,887"
-            },
-            "accounts_payable": {
-              "value": 23382.0,
-              "tolerance_percent": 5.0,
-              "required": true,
-              "notes": "Accounts payable trade $23,255 + common control $127"
-            },
-            "current_portion_ltd": {
-              "value": 175.0,
-              "tolerance_percent": 5.0,
-              "required": false,
-              "notes": "Current portion long-term debt $175"
-            },
-            "total_current_liabilities": {
-              "value": 52169.0,
-              "tolerance_percent": 5.0,
-              "required": true,
-              "notes": "Total current liabilities $52,169"
-            },
-            "long_term_debt": {
-              "value": 42984.0,
-              "tolerance_percent": 5.0,
-              "required": true,
-              "notes": "Long-term debt, net $42,984"
-            },
-            "total_liabilities": {
-              "value": 154522.0,
-              "tolerance_percent": 5.0,
-              "required": true,
-              "notes": "Total liabilities $154,522"
-            },
-            "total_shareholders_equity": {
-              "value": -19635.0,
-              "tolerance_percent": 5.0,
-              "required": true,
-              "notes": "Total shareholders' deficit $(19,635)"
-            },
-            "total_liabilities_and_equity": {
-              "value": 134887.0,
-              "tolerance_percent": 5.0,
-              "required": true,
-              "notes": "Total liabilities and shareholders' deficit $134,887"
-            }
+      },
+      "balance": {
+        "expected": {
+          "cash_and_equivalents": {
+            "value": 2186.12,
+            "tolerance_percent": 5.0,
+            "required": true,
+            "notes": "Cash as of Nov 30, 2025"
+          },
+          "accounts_receivable": {
+            "value": 5016.82,
+            "tolerance_percent": 5.0,
+            "required": true,
+            "notes": "AR-TP 7,802.32 + AR-Others 1,331.02 - Allowance (4,116.52) = 5,016.82"
+          },
+          "inventory": {
+            "value": 34664.75,
+            "tolerance_percent": 5.0,
+            "required": true,
+            "notes": "Inventory 40,270.40 - Inventory Reserves (5,605.65) = 34,664.75"
+          },
+          "prepaid_and_other_current": {
+            "value": 3796.77,
+            "tolerance_percent": 5.0,
+            "required": false,
+            "notes": "Prepaid 711.91 + Tax recoverable (875.70) + Deferred tax assets 3,960.56"
+          },
+          "total_current_assets": {
+            "value": 45664.46,
+            "tolerance_percent": 5.0,
+            "required": true,
+            "notes": "Total Current Assets as of Nov 30, 2025"
+          },
+          "net_ppe": {
+            "value": 14257.17,
+            "tolerance_percent": 5.0,
+            "required": false,
+            "notes": "PP&E 13,738.03 + ROU Finance 415.65 + ROU Operating 103.49"
+          },
+          "goodwill_and_intangibles": {
+            "value": 905.24,
+            "tolerance_percent": 5.0,
+            "required": false,
+            "notes": "Intangible assets 905.24"
+          },
+          "other_noncurrent_assets": {
+            "value": 16256.0,
+            "tolerance_percent": 5.0,
+            "required": false,
+            "notes": "Intercompany PartyLite 15,708.43 + Other LT Assets 547.57"
+          },
+          "total_assets": {
+            "value": 77082.87,
+            "tolerance_percent": 5.0,
+            "required": true,
+            "notes": "Total Assets as of Nov 30, 2025"
+          },
+          "accounts_payable": {
+            "value": 23472.14,
+            "tolerance_percent": 5.0,
+            "required": true,
+            "notes": "Accounts payable - TP as of Nov 30, 2025"
+          },
+          "current_portion_ltd": {
+            "value": 6853.91,
+            "tolerance_percent": 5.0,
+            "required": false,
+            "notes": "Current financial liabilities total"
+          },
+          "other_current_liabilities": {
+            "value": 4588.97,
+            "tolerance_percent": 5.0,
+            "required": false,
+            "notes": "Other current liabilities 5,315.71 - Income tax payable (726.74)"
+          },
+          "total_current_liabilities": {
+            "value": 34915.02,
+            "tolerance_percent": 5.0,
+            "required": true,
+            "notes": "Total Current Liabilities as of Nov 30, 2025"
+          },
+          "long_term_debt": {
+            "value": 72964.03,
+            "tolerance_percent": 5.0,
+            "required": true,
+            "notes": "Long Term Financial Liabilities total"
+          },
+          "other_noncurrent_liabilities": {
+            "value": 7901.28,
+            "tolerance_percent": 5.0,
+            "required": false,
+            "notes": "Total Long-Term Liabilities (deferred tax)"
+          },
+          "total_liabilities": {
+            "value": 115780.33,
+            "tolerance_percent": 5.0,
+            "required": true,
+            "notes": "Total Current + LT Financial + LT Other Liabilities"
+          },
+          "total_shareholders_equity": {
+            "value": -38697.48,
+            "tolerance_percent": 5.0,
+            "required": true,
+            "notes": "Total Shareholders' Equity as of Nov 30, 2025 - negative"
+          },
+          "total_liabilities_and_equity": {
+            "value": 77082.87,
+            "tolerance_percent": 5.0,
+            "required": true,
+            "notes": "Total liabilities and shareholders' equity as of Nov 30, 2025"
           }
         }
-      ]
-    },
-    {
-      "filename": "Luminex/2025-11-30 Candle-Lite Interim Financial Statements.xlsx",
-      "doc_type": "income",
-      "periods": [
-        {
-          "period_label": "FY2026 YTD",
-          "doc_type": "income",
-          "expected": {
-            "revenue": {
-              "value": 81821.35,
-              "tolerance_percent": 5.0,
-              "required": true,
-              "notes": "Net Sales from Excel Total column (sum of monthly)"
-            },
-            "cogs": {
-              "value": 71093.62,
-              "tolerance_percent": 5.0,
-              "required": true,
-              "notes": "Cost of Goods Sold (Excl. Depr) from Excel Total column"
-            },
-            "gross_profit": {
-              "value": 10727.73,
-              "tolerance_percent": 5.0,
-              "required": true,
-              "notes": "Gross Profit from Excel Total column"
-            },
-            "sga": {
-              "value": 12663.96,
-              "tolerance_percent": 5.0,
-              "required": true,
-              "notes": "SG&A (Excl. Depr) from Excel Total column"
-            },
-            "research_and_development": {
-              "value": null,
-              "tolerance_percent": 5.0,
-              "required": false,
-              "notes": "Not present in document"
-            },
-            "depreciation_amortization": {
-              "value": 3162.49,
-              "tolerance_percent": 10.0,
-              "required": false,
-              "notes": "Sum of all depreciation/amortization lines: Production 2,383.02 + SG&A 56.48 + ROU Finance 357.79 + ROU Operating COS 19.31 + ROU Operating SG&A 259.43 + LT assets 86.46"
-            },
-            "other_operating_expenses": {
-              "value": 3448.95,
-              "tolerance_percent": 10.0,
-              "required": false,
-              "notes": "Management Fees 500 + Other corporate expenses 2,933.10 + Other Expenses OH 185.93 - Intercompany Markup (171.08)"
-            },
-            "total_operating_expenses": {
-              "value": null,
-              "tolerance_percent": 5.0,
-              "required": false,
-              "notes": "Not directly stated in Excel format"
-            },
-            "operating_income": {
-              "value": -1936.23,
-              "tolerance_percent": 5.0,
-              "required": true,
-              "notes": "Operating Income from Excel Total column (before D&A add-back)"
-            },
-            "interest_expense": {
-              "value": 12282.27,
-              "tolerance_percent": 5.0,
-              "required": true,
-              "notes": "Interest expenses from Excel Total column"
-            },
-            "interest_income": {
-              "value": null,
-              "tolerance_percent": 5.0,
-              "required": false,
-              "notes": "Not separately stated"
-            },
-            "other_income_expense": {
-              "value": -479.35,
-              "tolerance_percent": 10.0,
-              "required": false,
-              "notes": "Other (income)/expense from Excel Total column (shown as expense)"
-            },
-            "pretax_income": {
-              "value": null,
-              "tolerance_percent": 5.0,
-              "required": false,
-              "notes": "Not directly stated in Excel format"
-            },
-            "income_tax_expense": {
-              "value": 64.96,
-              "tolerance_percent": 5.0,
-              "required": false,
-              "notes": "Tax from Excel Total column"
-            },
-            "net_income": {
-              "value": -22644.73,
-              "tolerance_percent": 5.0,
-              "required": true,
-              "notes": "Net Income from Excel Total column"
-            }
-          }
-        }
-      ]
-    },
-    {
-      "filename": "Luminex/2025-11-30 Candle-Lite Interim Financial Statements.xlsx",
-      "doc_type": "balance",
-      "periods": [
-        {
-          "period_label": "FY2026 YTD",
-          "doc_type": "balance",
-          "expected": {
-            "cash_and_equivalents": {
-              "value": 2186.12,
-              "tolerance_percent": 5.0,
-              "required": true,
-              "notes": "Cash as of Nov 30, 2025"
-            },
-            "accounts_receivable": {
-              "value": 5016.82,
-              "tolerance_percent": 5.0,
-              "required": true,
-              "notes": "AR-TP 7,802.32 + AR-Others 1,331.02 - Allowance (4,116.52) = 5,016.82"
-            },
-            "inventory": {
-              "value": 34664.75,
-              "tolerance_percent": 5.0,
-              "required": true,
-              "notes": "Inventory 40,270.40 - Inventory Reserves (5,605.65) = 34,664.75"
-            },
-            "prepaid_and_other_current": {
-              "value": 3796.77,
-              "tolerance_percent": 5.0,
-              "required": false,
-              "notes": "Prepaid 711.91 + Tax recoverable (875.70) + Deferred tax assets 3,960.56"
-            },
-            "total_current_assets": {
-              "value": 45664.46,
-              "tolerance_percent": 5.0,
-              "required": true,
-              "notes": "Total Current Assets as of Nov 30, 2025"
-            },
-            "net_ppe": {
-              "value": 14257.17,
-              "tolerance_percent": 5.0,
-              "required": false,
-              "notes": "PP&E 13,738.03 + ROU Finance 415.65 + ROU Operating 103.49"
-            },
-            "goodwill_and_intangibles": {
-              "value": 905.24,
-              "tolerance_percent": 5.0,
-              "required": false,
-              "notes": "Intangible assets 905.24"
-            },
-            "other_noncurrent_assets": {
-              "value": 16256.00,
-              "tolerance_percent": 5.0,
-              "required": false,
-              "notes": "Intercompany PartyLite 15,708.43 + Other LT Assets 547.57"
-            },
-            "total_assets": {
-              "value": 77082.87,
-              "tolerance_percent": 5.0,
-              "required": true,
-              "notes": "Total Assets as of Nov 30, 2025"
-            },
-            "accounts_payable": {
-              "value": 23472.14,
-              "tolerance_percent": 5.0,
-              "required": true,
-              "notes": "Accounts payable - TP as of Nov 30, 2025"
-            },
-            "current_portion_ltd": {
-              "value": 6853.91,
-              "tolerance_percent": 5.0,
-              "required": false,
-              "notes": "Current financial liabilities total"
-            },
-            "other_current_liabilities": {
-              "value": 4588.97,
-              "tolerance_percent": 5.0,
-              "required": false,
-              "notes": "Other current liabilities 5,315.71 - Income tax payable (726.74)"
-            },
-            "total_current_liabilities": {
-              "value": 34915.02,
-              "tolerance_percent": 5.0,
-              "required": true,
-              "notes": "Total Current Liabilities as of Nov 30, 2025"
-            },
-            "long_term_debt": {
-              "value": 72964.03,
-              "tolerance_percent": 5.0,
-              "required": true,
-              "notes": "Long Term Financial Liabilities total"
-            },
-            "other_noncurrent_liabilities": {
-              "value": 7901.28,
-              "tolerance_percent": 5.0,
-              "required": false,
-              "notes": "Total Long-Term Liabilities (deferred tax)"
-            },
-            "total_liabilities": {
-              "value": 115780.33,
-              "tolerance_percent": 5.0,
-              "required": true,
-              "notes": "Total Current + LT Financial + LT Other Liabilities"
-            },
-            "total_shareholders_equity": {
-              "value": -38697.48,
-              "tolerance_percent": 5.0,
-              "required": true,
-              "notes": "Total Shareholders' Equity as of Nov 30, 2025 - negative"
-            },
-            "total_liabilities_and_equity": {
-              "value": 77082.87,
-              "tolerance_percent": 5.0,
-              "required": true,
-              "notes": "Total liabilities and shareholders' equity as of Nov 30, 2025"
-            }
-          }
-        }
-      ]
+      }
     }
   ]
 }
