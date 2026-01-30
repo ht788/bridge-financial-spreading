@@ -118,7 +118,7 @@ export const UploadPage: React.FC<UploadPageProps> = ({
             Upload Financial Statements
           </h2>
           <p className="text-gray-600">
-            Upload one or more PDFs to extract and spread financial data
+            Upload PDFs or Excel files to extract and spread financial data
           </p>
         </div>
 

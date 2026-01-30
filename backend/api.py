@@ -25,7 +25,7 @@ from pydantic import BaseModel
 import sys
 sys.path.append(str(Path(__file__).parent.parent))
 
-from spreader import spread_financials, spread_pdf, spread_pdf_combined, reset_fallback_flag, was_fallback_used
+from spreader import spread_financials, spread_pdf, spread_pdf_combined, spread_excel_combined, reset_fallback_flag, was_fallback_used
 from models import IncomeStatement, BalanceSheet, CombinedFinancialExtraction
 
 # Import testing module
@@ -351,12 +351,13 @@ async def spread_financial_statement(
     
     await emit_log("info", f"Starting single file processing", "api", job_id, filename)
     
-    # Validate file type
-    if not filename.endswith('.pdf'):
-        await emit_log("error", "Invalid file type - only PDF files are supported", "api", job_id, filename)
+    # Validate file type - accept PDF and Excel files
+    valid_extensions = ('.pdf', '.xlsx', '.xls', '.xlsm')
+    if not filename.lower().endswith(valid_extensions):
+        await emit_log("error", "Invalid file type - only PDF and Excel files are supported", "api", job_id, filename)
         raise HTTPException(
             status_code=400,
-            detail="Only PDF files are supported"
+            detail="Only PDF and Excel files are supported (.pdf, .xlsx, .xls, .xlsm)"
         )
     
     # Validate doc_type - now supports 'auto'
@@ -399,23 +400,35 @@ async def spread_financial_statement(
             "auto_detect_mode": is_auto_mode
         })
         
+        # Detect file type
+        is_excel = filename.lower().endswith(('.xlsx', '.xls', '.xlsm'))
+        file_type_label = "Excel" if is_excel else "PDF"
+        
         # Broadcast progress via WebSocket
         if is_auto_mode:
-            await broadcast_progress(job_id, "processing", "Detecting statement types and processing PDF...")
+            await broadcast_progress(job_id, "processing", f"Detecting statement types and processing {file_type_label}...")
         else:
-            await broadcast_progress(job_id, "processing", "Processing PDF...")
+            await broadcast_progress(job_id, "processing", f"Processing {file_type_label}...")
         
-        # Process the file using vision-first spreader with reasoning loop
+        # Process the file using appropriate spreader
         # Prompts are loaded from LangSmith Hub (fail-fast if unavailable)
         if is_auto_mode:
-            # Use async combined extraction with auto-detection
-            result = await spread_pdf_combined(
-                pdf_path=str(file_path),
-                max_pages=max_pages,
-                dpi=dpi,
-                model_override=model_override,
-                extended_thinking=extended_thinking
-            )
+            if is_excel:
+                # Use async combined extraction for Excel (text-based, no vision)
+                result = await spread_excel_combined(
+                    excel_path=str(file_path),
+                    model_override=model_override,
+                    extended_thinking=extended_thinking
+                )
+            else:
+                # Use async combined extraction for PDF (vision-first)
+                result = await spread_pdf_combined(
+                    pdf_path=str(file_path),
+                    max_pages=max_pages,
+                    dpi=dpi,
+                    model_override=model_override,
+                    extended_thinking=extended_thinking
+                )
         else:
             # Enable multi-period mode to extract all periods in the document
             result = spread_financials(
@@ -541,13 +554,14 @@ async def _process_single_file(
     async with semaphore:
         await emit_log("info", f"Processing file {idx + 1}/{total_files}: {filename}", "api", job_id, filename)
         
-        # Validate file type
-        if not filename.endswith('.pdf'):
-            await emit_log("warning", f"Skipping non-PDF file: {filename}", "api", job_id, filename)
+        # Validate file type - accept PDF and Excel files
+        valid_extensions = ('.pdf', '.xlsx', '.xls', '.xlsm')
+        if not filename.lower().endswith(valid_extensions):
+            await emit_log("warning", f"Skipping unsupported file: {filename}", "api", job_id, filename)
             return BatchFileResult(
                 filename=filename,
                 success=False,
-                error="Only PDF files are supported",
+                error="Only PDF and Excel files are supported (.pdf, .xlsx, .xls, .xlsm)",
                 job_id=job_id
             )
         
@@ -573,21 +587,33 @@ async def _process_single_file(
             # Reset fallback flag before processing
             reset_fallback_flag()
             
-            # Process based on doc_type
+            # Process based on doc_type and file type
             is_auto_mode = doc_type == "auto"
-            await emit_log("info", f"Processing {filename} as {doc_type}", "spreader", job_id, filename, {
-                "auto_detect_mode": is_auto_mode
+            is_excel = filename.lower().endswith(('.xlsx', '.xls', '.xlsm'))
+            file_type_label = "Excel" if is_excel else "PDF"
+            
+            await emit_log("info", f"Processing {filename} as {doc_type} ({file_type_label})", "spreader", job_id, filename, {
+                "auto_detect_mode": is_auto_mode,
+                "file_type": file_type_label
             })
             
             if is_auto_mode:
-                # Use async combined extraction - extracts IS+BS in parallel within this file
-                result = await spread_pdf_combined(
-                    pdf_path=str(file_path),
-                    max_pages=max_pages,
-                    dpi=dpi,
-                    model_override=model_override,
-                    extended_thinking=extended_thinking
-                )
+                if is_excel:
+                    # Use async combined extraction for Excel (text-based, no vision)
+                    result = await spread_excel_combined(
+                        excel_path=str(file_path),
+                        model_override=model_override,
+                        extended_thinking=extended_thinking
+                    )
+                else:
+                    # Use async combined extraction for PDF (vision-first)
+                    result = await spread_pdf_combined(
+                        pdf_path=str(file_path),
+                        max_pages=max_pages,
+                        dpi=dpi,
+                        model_override=model_override,
+                        extended_thinking=extended_thinking
+                    )
             else:
                 # Use asyncio.to_thread to run sync function without blocking
                 result = await asyncio.to_thread(
@@ -854,22 +880,33 @@ async def spread_batch(
 @app.get("/api/files/{filename}")
 async def get_file(filename: str):
     """
-    Serve uploaded PDF files.
+    Serve uploaded financial statement files (PDF or Excel).
     
     Args:
         filename: Name of the file to retrieve
         
     Returns:
-        FileResponse with the PDF
+        FileResponse with the file
     """
     file_path = UPLOAD_DIR / filename
     
     if not file_path.exists():
         raise HTTPException(status_code=404, detail="File not found")
     
+    # Determine media type based on file extension
+    lower_filename = filename.lower()
+    if lower_filename.endswith('.xlsx'):
+        media_type = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+    elif lower_filename.endswith('.xls'):
+        media_type = "application/vnd.ms-excel"
+    elif lower_filename.endswith('.xlsm'):
+        media_type = "application/vnd.ms-excel.sheet.macroEnabled.12"
+    else:
+        media_type = "application/pdf"
+    
     return FileResponse(
         file_path,
-        media_type="application/pdf",
+        media_type=media_type,
         filename=filename
     )
 

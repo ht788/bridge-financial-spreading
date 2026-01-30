@@ -2781,11 +2781,14 @@ async def spread_excel_combined(
     # -------------------------------------------------------------------------
     # STEP 5: Build result
     # -------------------------------------------------------------------------
+    # Note: income_sheets and balance_sheets are sheet NAMES (strings) for Excel files
+    # StatementTypeDetection.income_statement_pages expects page numbers (integers)
+    # For Excel, we pass empty lists and include sheet info in notes
     detection = StatementTypeDetection(
         has_income_statement=income_result is not None,
         has_balance_sheet=balance_result is not None,
-        income_statement_pages=income_sheets if income_sheets else [],
-        balance_sheet_pages=balance_sheets if balance_sheets else [],
+        income_statement_pages=[],  # Page numbers don't apply to Excel
+        balance_sheet_pages=[],  # Page numbers don't apply to Excel
         confidence=0.9 if (income_sheets or balance_sheets) else 0.5,
         notes=f"Detected from Excel sheets: IS={income_sheets}, BS={balance_sheets}"
     )
