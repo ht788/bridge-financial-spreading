@@ -29,7 +29,7 @@ try:
         FieldComparison, FieldAccuracy, PeriodGrade, FileGrade,
         GradeLevel, score_to_grade, TestRunSummary, TestHistoryResponse,
         ExpectedLineItem, AvailableModel, TestRunStatus,
-        StatementAnswerKey, PeriodStatements
+        StatementAnswerKey, PeriodStatements, BreakdownItemResult
     )
 except ImportError:
     from backend.testing.test_models import (
@@ -38,7 +38,7 @@ except ImportError:
         FieldComparison, FieldAccuracy, PeriodGrade, FileGrade,
         GradeLevel, score_to_grade, TestRunSummary, TestHistoryResponse,
         ExpectedLineItem, AvailableModel, TestRunStatus,
-        StatementAnswerKey, PeriodStatements
+        StatementAnswerKey, PeriodStatements, BreakdownItemResult
     )
 
 # Import spreader functionality
@@ -732,11 +732,26 @@ def grade_period(
         if not expected_item:
             continue
         
-        # Get extracted value
+        # Get extracted value and breakdown
         extracted_field = extracted_data.get(field_name, {})
         extracted_value = None
-        if isinstance(extracted_field, dict) and 'value' in extracted_field:
-            extracted_value = extracted_field.get('value')
+        breakdown_items = None
+        if isinstance(extracted_field, dict):
+            if 'value' in extracted_field:
+                extracted_value = extracted_field.get('value')
+            # Extract breakdown sub-accounts if present
+            raw_breakdown = extracted_field.get('breakdown')
+            if raw_breakdown and isinstance(raw_breakdown, list) and len(raw_breakdown) > 0:
+                breakdown_items = [
+                    BreakdownItemResult(
+                        label=item.get('label', ''),
+                        value=item.get('value')
+                    )
+                    for item in raw_breakdown
+                    if isinstance(item, dict) and item.get('label')
+                ]
+                if not breakdown_items:
+                    breakdown_items = None
         
         comparison = compare_field(
             field_name=field_name,
@@ -744,6 +759,9 @@ def grade_period(
             expected=expected_item,
             default_tolerance=default_tolerance
         )
+        # Attach breakdown data to the comparison
+        if breakdown_items:
+            comparison.breakdown = breakdown_items
         comparisons.append(comparison)
     
     # Calculate statistics

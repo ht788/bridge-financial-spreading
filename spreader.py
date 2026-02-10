@@ -1839,8 +1839,11 @@ def spread_pdf(
             model_kwargs["temperature"] = hub_model_config["temperature"]
         if hub_model_config.get("reasoning_effort"):
             reasoning = hub_model_config["reasoning_effort"]
-            valid_efforts = ["low", "medium", "high", "xhigh"]
-            if reasoning not in valid_efforts:
+            valid_efforts = ["low", "medium", "high"]
+            if reasoning == "xhigh":
+                logger.warning(f"[MODEL] reasoning_effort 'xhigh' not supported by OpenAI, downgrading to 'high'")
+                reasoning = "high"
+            elif reasoning not in valid_efforts:
                 logger.warning(f"[MODEL] Invalid reasoning_effort '{reasoning}', defaulting to 'high'")
                 reasoning = "high"
             model_kwargs["reasoning_effort"] = reasoning

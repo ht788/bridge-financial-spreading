@@ -435,6 +435,21 @@ export const TestResultsComparison: React.FC<TestResultsComparisonProps> = ({ re
 
                       {/* Field Comparisons */}
                       <div className="flex-1 overflow-y-auto bg-white">
+                        {/* Column Legend */}
+                        <div className="px-4 py-1.5 bg-white border-b border-gray-200 flex items-center gap-3 sticky top-0 z-10">
+                          <div className="w-4" /> {/* icon spacer */}
+                          <div className="flex-1 grid grid-cols-2 gap-x-4 text-[10px] font-semibold uppercase tracking-wider">
+                            <div className="flex items-center gap-2">
+                              <span className="w-16 text-violet-500">Answer</span>
+                              <span className="text-gray-400">= correct value</span>
+                            </div>
+                            <div className="flex items-center gap-2">
+                              <span className="w-16 text-blue-500">Extracted</span>
+                              <span className="text-gray-400">= what AI returned</span>
+                            </div>
+                          </div>
+                          <div className="w-4" /> {/* chevron spacer */}
+                        </div>
                         {groupedFields.map((section) => (
                           <div key={section.title} className="border-b border-gray-100 last:border-0">
                             <button
@@ -555,38 +570,44 @@ const FieldComparisonRow: React.FC<FieldComparisonRowProps> = ({
     }
   };
 
+  const hasBreakdown = comparison.breakdown && comparison.breakdown.length > 0;
+
   return (
-    <div className={`hover:bg-gray-50 transition-colors ${isTotalLine ? 'bg-gray-50/30' : ''}`}>
+    <div className={`hover:bg-gray-50/50 transition-colors ${isTotalLine ? 'bg-gray-50/30' : ''}`}>
       <button
         onClick={onToggle}
         className="w-full px-4 py-2.5 flex items-center gap-3 text-left group"
       >
-        <div className="mt-0.5">{getStatusIcon()}</div>
+        <div className="mt-0.5 flex-shrink-0">{getStatusIcon()}</div>
         
         <div className="flex-1 min-w-0">
-          <div className="flex items-center justify-between mb-0.5">
+          {/* Field Name + Accuracy Badge */}
+          <div className="flex items-center justify-between mb-1.5">
             <div className={`text-sm truncate pr-2 ${isTotalLine ? 'font-bold text-gray-900' : 'font-medium text-gray-700'}`} title={comparison.field_name}>
               {comparison.field_name.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase())}
             </div>
-            <span className={`text-[10px] px-1.5 py-0.5 rounded uppercase font-semibold ${getAccuracyColor(comparison.accuracy)}`}>
+            <span className={`text-[10px] px-1.5 py-0.5 rounded uppercase font-semibold flex-shrink-0 ${getAccuracyColor(comparison.accuracy)}`}>
               {getAccuracyLabel(comparison.accuracy)}
             </span>
           </div>
           
-          <div className="flex items-center justify-between text-xs font-mono">
+          {/* Answer vs Extracted - two-row layout */}
+          <div className="grid grid-cols-2 gap-x-4 text-xs font-mono">
             <div className="flex items-center gap-2">
-              <span className="text-gray-400">Exp:</span>
+              <span className="text-[10px] font-semibold uppercase tracking-wide text-violet-500 w-16 flex-shrink-0">Answer</span>
               <span className={`text-gray-900 ${isTotalLine ? 'font-semibold' : ''}`}>{formatValue(comparison.expected_value)}</span>
             </div>
             <div className="flex items-center gap-2">
-              <span className="text-gray-400">Got:</span>
+              <span className="text-[10px] font-semibold uppercase tracking-wide text-blue-500 w-16 flex-shrink-0">Extracted</span>
               <span className={clsx(
                 isTotalLine ? 'font-bold' : 'font-medium',
                 comparison.accuracy === 'exact' || comparison.accuracy === 'tolerance' 
                   ? 'text-emerald-600' 
                   : comparison.accuracy === 'partial' 
                     ? 'text-yellow-600' 
-                    : 'text-red-600'
+                    : comparison.accuracy === 'missing'
+                      ? 'text-gray-400'
+                      : 'text-red-600'
               )}>
                 {formatValue(comparison.extracted_value)}
               </span>
@@ -594,9 +615,27 @@ const FieldComparisonRow: React.FC<FieldComparisonRowProps> = ({
           </div>
         </div>
 
-        <ChevronDown className={`w-4 h-4 text-gray-400 transition-transform group-hover:text-gray-600 ${isExpanded ? 'rotate-180' : ''}`} />
+        <ChevronDown className={`w-4 h-4 text-gray-400 transition-transform group-hover:text-gray-600 flex-shrink-0 ${isExpanded ? 'rotate-180' : ''}`} />
       </button>
 
+      {/* Breakdown Sub-Accounts (always visible when present) */}
+      {hasBreakdown && (
+        <div className="px-4 pb-1.5 pl-11">
+          <div className="border-l-2 border-violet-200 ml-1 pl-3">
+            <div className="text-[10px] font-semibold uppercase tracking-wide text-gray-400 mb-1">
+              Sub-accounts from document
+            </div>
+            {comparison.breakdown!.map((item, idx) => (
+              <div key={idx} className="flex items-center justify-between text-xs py-0.5">
+                <span className="text-gray-500 truncate pr-2">{item.label}</span>
+                <span className="font-mono text-gray-600 flex-shrink-0">{formatValue(item.value)}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Expanded Details */}
       {isExpanded && (
         <div className="px-4 pb-3 pl-11">
           <div className="bg-gray-50 rounded p-2 text-xs border border-gray-100">

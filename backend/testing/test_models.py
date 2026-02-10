@@ -192,6 +192,12 @@ class CompanyAnswerKey(BaseModel):
 # GRADING RESULTS
 # =============================================================================
 
+class BreakdownItemResult(BaseModel):
+    """A sub-account/breakdown item extracted from the document"""
+    label: str = Field(description="Label of the sub-account (e.g., 'Soda Revenue')")
+    value: Optional[float] = Field(default=None, description="Extracted value of the sub-account")
+
+
 class FieldComparison(BaseModel):
     """Detailed comparison result for a single field"""
     field_name: str
@@ -203,6 +209,10 @@ class FieldComparison(BaseModel):
     difference: Optional[float] = Field(default=None, description="Absolute difference")
     difference_percent: Optional[float] = Field(default=None, description="Percentage difference")
     notes: Optional[str] = None
+    breakdown: Optional[List[BreakdownItemResult]] = Field(
+        default=None, 
+        description="Sub-accounts from the document that were totalled into this field"
+    )
 
 
 class PeriodGrade(BaseModel):

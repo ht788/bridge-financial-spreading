@@ -98,6 +98,11 @@ export interface FileAnswerKey {
 // GRADING RESULTS
 // =============================================================================
 
+export interface BreakdownItemResult {
+  label: string;
+  value: number | null;
+}
+
 export interface FieldComparison {
   field_name: string;
   expected_value: number | null;
@@ -108,6 +113,7 @@ export interface FieldComparison {
   difference?: number;
   difference_percent?: number;
   notes?: string;
+  breakdown?: BreakdownItemResult[] | null;
 }
 
 export interface PeriodGrade {
