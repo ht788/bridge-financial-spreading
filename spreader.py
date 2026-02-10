@@ -9,7 +9,7 @@ This module implements financial spreading with:
 Architecture:
 
 1. HUB-CONTROLLED MODEL CONFIGURATION
-   - Model name, parameters (reasoning_effort, temperature) come from LangSmith Hub
+   - Model name, parameters (temperature, extended_thinking) come from LangSmith Hub
    - Change models in LangSmith UI → takes effect immediately (no code deploy)
    - Code only provides fallback defaults when Hub is unavailable
 
@@ -19,7 +19,8 @@ Architecture:
    - Model "sees" indentation, headers, alignment - critical for correct categorization
 
 3. REASONING LOOP (Chain of Thought)
-   - Uses gpt-5.2/o1 with reasoning_effort="high" for deep analysis
+   - Uses Claude Opus 4.6 with adaptive thinking for deep analysis
+   - Uses Claude 3.5 Haiku for fast detection/classification tasks
    - Validates extracted data (math checks, balance checks)
    - Auto-retries with error context if validation fails
 
@@ -62,8 +63,11 @@ _load_env_vars()
 from langchain_core.messages import HumanMessage, SystemMessage
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.runnables import RunnableConfig, Runnable
-from langchain_openai import ChatOpenAI
 from langchain_anthropic import ChatAnthropic
+try:
+    from langchain_openai import ChatOpenAI
+except ImportError:
+    ChatOpenAI = None  # OpenAI support is optional
 from langsmith import traceable
 from langsmith.run_helpers import get_current_run_tree
 from pydantic import BaseModel, ValidationError, Field
@@ -94,6 +98,7 @@ from utils import (
 from model_config import (
     get_model_by_id,
     get_default_model,
+    get_fast_model,
     validate_model_for_spreading,
     ModelProvider
 )
@@ -1111,7 +1116,7 @@ def load_from_hub(doc_type: str) -> Tuple[ChatPromptTemplate, Optional[dict]]:
         USE_LOCAL_PROMPTS: Set to 'true' to skip Hub and use local prompts
     
     Uses `include_model=True` to pull the full chain including model config
-    when a model is configured in LangSmith Hub (ChatOpenAI section).
+    when a model is configured in LangSmith Hub.
     
     Args:
         doc_type: Type of document ('income' or 'balance')
@@ -1169,7 +1174,7 @@ def load_from_hub(doc_type: str) -> Tuple[ChatPromptTemplate, Optional[dict]]:
             # Extract the prompt template (first element)
             prompt = hub_object.first
             
-            # Extract model config from the last element (RunnableBinding or ChatOpenAI)
+            # Extract model config from the last element (RunnableBinding or ChatAnthropic/ChatOpenAI)
             model_obj = hub_object.last
             
             # Handle RunnableBinding wrapper
@@ -1220,38 +1225,50 @@ def get_model_config_from_environment() -> Tuple[str, dict]:
     """
     Get model configuration from environment variables.
     
+    Priority:
+    1. ANTHROPIC_MODEL env var (if ANTHROPIC_API_KEY is set)
+    2. Default model from model_config.py (Claude Opus 4.6)
+    
     Environment Variables:
-    - OPENAI_MODEL: Model name (default: from model_config.py)
     - ANTHROPIC_MODEL: Anthropic model name override
-    - OPENAI_REASONING_EFFORT: Reasoning effort for o1/gpt-5.2 (default: high)
+    - ANTHROPIC_API_KEY: Required API key for Claude models
     
     Returns:
         Tuple of (model_name, model_kwargs)
     """
-    # Try Anthropic model first (if ANTHROPIC_API_KEY is set)
-    if os.getenv("ANTHROPIC_API_KEY"):
-        anthropic_model = os.getenv("ANTHROPIC_MODEL")
-        if anthropic_model:
-            logger.info(f"Using Anthropic model from environment: {anthropic_model}")
-            return anthropic_model, {}
-    
-    # Fallback to OpenAI model
-    # Use default from model_config.py if not specified
     from model_config import get_default_model
     default_model = get_default_model()
-    model = os.getenv("OPENAI_MODEL", default_model.id)
     
-    # Model kwargs
+    # Use ANTHROPIC_MODEL env var if set, otherwise use model_config default
+    model = os.getenv("ANTHROPIC_MODEL", default_model.id)
     model_kwargs = {}
     
-    # Reasoning effort for gpt-5.2/o1 models
-    # Default to "high" for financial analysis requiring deep reasoning
-    reasoning_effort = os.getenv("OPENAI_REASONING_EFFORT", "high")
+    logger.info(f"Using model from environment: {model}")
     
-    # Only add reasoning_effort for compatible models
-    if any(x in model.lower() for x in ["gpt-5", "o1", "o3"]):
-        model_kwargs["reasoning_effort"] = reasoning_effort
-        logger.info(f"Using reasoning_effort={reasoning_effort} for model {model}")
+    return model, model_kwargs
+
+
+def get_detection_model_config() -> Tuple[str, dict]:
+    """
+    Get model configuration for fast detection/classification tasks.
+    
+    Uses a faster, cheaper model (Claude 3.5 Haiku) for tasks like:
+    - Statement type detection
+    - Column classification
+    - Period detection
+    
+    Can be overridden with DETECTION_MODEL env var.
+    
+    Returns:
+        Tuple of (model_name, model_kwargs)
+    """
+    from model_config import get_fast_model
+    fast_model = get_fast_model()
+    
+    model = os.getenv("DETECTION_MODEL", fast_model.id)
+    model_kwargs = {}
+    
+    logger.info(f"Using fast detection model: {model}")
     
     return model, model_kwargs
 
@@ -1265,7 +1282,10 @@ def create_llm(
     model_kwargs: Optional[dict] = None
 ):
     """
-    Create LLM instance (OpenAI or Anthropic) based on model name.
+    Create LLM instance based on model name.
+    
+    Primarily uses Anthropic (Claude) models. OpenAI is available as a
+    secondary option if explicitly configured.
     
     Parameters like temperature, max_tokens should be controlled via:
     1. LangSmith Hub prompt configuration
@@ -1280,7 +1300,7 @@ def create_llm(
         model_kwargs: Optional additional model parameters
         
     Returns:
-        Configured ChatOpenAI or ChatAnthropic instance
+        Configured ChatAnthropic (or ChatOpenAI) instance
     """
     # Get model from environment if not specified
     if model_name is None:
@@ -1304,103 +1324,119 @@ def create_llm(
         provider = model_def.provider
     else:
         # Fallback: infer from model name
-        if "claude" in model_name.lower():
-            provider = ModelProvider.ANTHROPIC
-        else:
+        if any(x in model_name.lower() for x in ["gpt", "o1", "o3"]):
             provider = ModelProvider.OPENAI
+        else:
+            provider = ModelProvider.ANTHROPIC  # Default to Anthropic
     
     logger.info(f"Creating LLM: {model_name} (provider: {provider.value}) with kwargs: {model_kwargs}")
     
     # Create appropriate LLM instance
     if provider == ModelProvider.ANTHROPIC:
-        # Get and validate Anthropic API key
-        anthropic_api_key = os.getenv("ANTHROPIC_API_KEY")
-        if not anthropic_api_key:
-            raise ValueError(
-                "ANTHROPIC_API_KEY not found in environment variables. "
-                "Please add it to your .env file: ANTHROPIC_API_KEY=sk-ant-..."
-            )
-        
-        # Create Anthropic LLM
-        llm_config = {
-            "model": model_name,
-            "api_key": anthropic_api_key,
-        }
-        
-        # Anthropic: map reasoning_effort to effort parameter, use adaptive thinking for Opus 4.6
-        if model_kwargs:
-            filtered_kwargs = {}
-            effort_level = "high"  # Default effort for Anthropic
-            user_opted_max = False
-            
-            for k, v in model_kwargs.items():
-                if k == "reasoning_effort":
-                    # Map reasoning_effort to Anthropic effort parameter
-                    effort_map = {"xhigh": "max", "max": "max", "high": "high", "medium": "medium", "low": "low"}
-                    effort_level = effort_map.get(v, "high")
-                    if effort_level == "max":
-                        user_opted_max = True
-                        logger.info("[ANTHROPIC] User opted in to max effort")
-                elif k == "extended_thinking":
-                    if v:
-                        user_opted_max = True  # User opted in to max effort
-                        logger.info("[ANTHROPIC] Extended thinking enabled - using max effort")
-                else:
-                    filtered_kwargs[k] = v
-            
-            # Opus 4.6: use adaptive thinking (recommended by Anthropic docs)
-            if "opus-4-6" in model_name.lower():
-                filtered_kwargs["thinking"] = {"type": "adaptive"}
-                if user_opted_max:
-                    effort_level = "max"
-                filtered_kwargs["output_config"] = {"effort": effort_level}
-                logger.info(f"[ANTHROPIC] Opus 4.6 adaptive thinking with effort={effort_level}")
-            else:
-                # Older Anthropic models: use manual extended thinking if opted in
-                if user_opted_max:
-                    filtered_kwargs["thinking"] = {"type": "enabled", "budget_tokens": 10000}
-                    logger.info("[ANTHROPIC] Using manual extended thinking (budget_tokens=10000)")
-            
-            if filtered_kwargs:
-                llm_config["model_kwargs"] = filtered_kwargs
-        else:
-            # No model_kwargs: still enable adaptive thinking for Opus 4.6
-            if "opus-4-6" in model_name.lower():
-                llm_config["model_kwargs"] = {
-                    "thinking": {"type": "adaptive"},
-                    "output_config": {"effort": "high"}
-                }
-                logger.info("[ANTHROPIC] Opus 4.6 adaptive thinking with effort=high (default)")
-        
-        # ChatAnthropic automatically traces to LangSmith when LANGSMITH_API_KEY is set
-        return ChatAnthropic(**llm_config)
+        return _create_anthropic_llm(model_name, model_kwargs)
     else:
-        # Get and validate OpenAI API key
-        openai_api_key = os.getenv("OPENAI_API_KEY")
-        if not openai_api_key:
-            raise ValueError(
-                "OPENAI_API_KEY not found in environment variables. "
-                "Please add it to your .env file: OPENAI_API_KEY=sk-..."
-            )
+        return _create_openai_llm(model_name, model_kwargs)
+
+
+def _create_anthropic_llm(model_name: str, model_kwargs: Optional[dict] = None):
+    """Create a ChatAnthropic LLM instance."""
+    # Get and validate Anthropic API key
+    anthropic_api_key = os.getenv("ANTHROPIC_API_KEY")
+    if not anthropic_api_key:
+        raise ValueError(
+            "ANTHROPIC_API_KEY not found in environment variables. "
+            "Please add it to your .env file: ANTHROPIC_API_KEY=sk-ant-..."
+        )
+    
+    # Create Anthropic LLM
+    llm_config = {
+        "model": model_name,
+        "api_key": anthropic_api_key,
+    }
+    
+    # Anthropic: map reasoning_effort to effort parameter, use adaptive thinking for Opus 4.6
+    if model_kwargs:
+        filtered_kwargs = {}
+        effort_level = "high"  # Default effort for Anthropic
+        user_opted_max = False
         
-        # Create OpenAI LLM
-        llm_config = {
-            "model": model_name,
-            "api_key": openai_api_key,
-        }
+        for k, v in model_kwargs.items():
+            if k == "reasoning_effort":
+                # Map reasoning_effort to Anthropic effort parameter
+                effort_map = {"xhigh": "max", "max": "max", "high": "high", "medium": "medium", "low": "low"}
+                effort_level = effort_map.get(v, "high")
+                if effort_level == "max":
+                    user_opted_max = True
+                    logger.info("[ANTHROPIC] User opted in to max effort")
+            elif k == "extended_thinking":
+                if v:
+                    user_opted_max = True  # User opted in to max effort
+                    logger.info("[ANTHROPIC] Extended thinking enabled - using max effort")
+            else:
+                filtered_kwargs[k] = v
         
-        # Add model_kwargs if present (e.g., reasoning_effort)
-        if model_kwargs:
-            # Sanitize reasoning_effort for OpenAI - block values not supported
-            if "reasoning_effort" in model_kwargs:
-                re_val = model_kwargs["reasoning_effort"]
-                if re_val in ("max", "xhigh"):
-                    logger.warning(f"[OPENAI] reasoning_effort '{re_val}' not supported by OpenAI, downgrading to 'high'")
-                    model_kwargs["reasoning_effort"] = "high"
-            llm_config["model_kwargs"] = model_kwargs
+        # Opus 4.6: use adaptive thinking (recommended by Anthropic docs)
+        if "opus-4-6" in model_name.lower():
+            filtered_kwargs["thinking"] = {"type": "adaptive"}
+            if user_opted_max:
+                effort_level = "max"
+            filtered_kwargs["output_config"] = {"effort": effort_level}
+            logger.info(f"[ANTHROPIC] Opus 4.6 adaptive thinking with effort={effort_level}")
+        else:
+            # Sonnet 4.5: use extended thinking if opted in
+            if user_opted_max and "sonnet-4-5" in model_name.lower():
+                filtered_kwargs["thinking"] = {"type": "enabled", "budget_tokens": 10000}
+                logger.info("[ANTHROPIC] Using manual extended thinking (budget_tokens=10000)")
+            # Haiku and other models: no thinking support, just skip
         
-        # ChatOpenAI automatically traces to LangSmith when LANGSMITH_API_KEY is set
-        return ChatOpenAI(**llm_config)
+        if filtered_kwargs:
+            llm_config["model_kwargs"] = filtered_kwargs
+    else:
+        # No model_kwargs: still enable adaptive thinking for Opus 4.6
+        if "opus-4-6" in model_name.lower():
+            llm_config["model_kwargs"] = {
+                "thinking": {"type": "adaptive"},
+                "output_config": {"effort": "high"}
+            }
+            logger.info("[ANTHROPIC] Opus 4.6 adaptive thinking with effort=high (default)")
+    
+    # ChatAnthropic automatically traces to LangSmith when LANGSMITH_API_KEY is set
+    return ChatAnthropic(**llm_config)
+
+
+def _create_openai_llm(model_name: str, model_kwargs: Optional[dict] = None):
+    """Create a ChatOpenAI LLM instance (optional, for backward compatibility)."""
+    if ChatOpenAI is None:
+        raise ImportError(
+            "langchain-openai is not installed. Install it with: pip install langchain-openai"
+        )
+    
+    # Get and validate OpenAI API key
+    openai_api_key = os.getenv("OPENAI_API_KEY")
+    if not openai_api_key:
+        raise ValueError(
+            "OPENAI_API_KEY not found in environment variables. "
+            "Please add it to your .env file: OPENAI_API_KEY=sk-..."
+        )
+    
+    # Create OpenAI LLM
+    llm_config = {
+        "model": model_name,
+        "api_key": openai_api_key,
+    }
+    
+    # Add model_kwargs if present (e.g., reasoning_effort)
+    if model_kwargs:
+        # Sanitize reasoning_effort for OpenAI
+        if "reasoning_effort" in model_kwargs:
+            re_val = model_kwargs["reasoning_effort"]
+            if re_val in ("max", "xhigh"):
+                logger.warning(f"[OPENAI] reasoning_effort '{re_val}' not supported, downgrading to 'high'")
+                model_kwargs["reasoning_effort"] = "high"
+        llm_config["model_kwargs"] = model_kwargs
+    
+    # ChatOpenAI automatically traces to LangSmith when LANGSMITH_API_KEY is set
+    return ChatOpenAI(**llm_config)
 
 
 # =============================================================================
@@ -1791,8 +1827,8 @@ def spread_pdf(
     MODEL CONFIGURATION HIERARCHY:
     1. model_override parameter (for testing only)
     2. LangSmith Hub prompt model_config (if set)
-    3. OPENAI_MODEL environment variable
-    4. Default: gpt-5
+    3. ANTHROPIC_MODEL environment variable
+    4. Default: claude-opus-4-6 (from model_config.py)
     
     Args:
         pdf_path: Path to the PDF financial statement
@@ -1855,9 +1891,6 @@ def spread_pdf(
         # Testing override - user explicitly requested a different model
         model_name = model_override
         model_kwargs = {}
-        if any(x in model_override.lower() for x in ["gpt-5", "o1", "o3"]):
-            model_kwargs["reasoning_effort"] = os.getenv("OPENAI_REASONING_EFFORT", "high")
-        # Add extended thinking for Anthropic models
         if "claude" in model_override.lower() and extended_thinking:
             model_kwargs["extended_thinking"] = True
         logger.info(f"[MODEL] Using override: {model_name}")
@@ -1875,7 +1908,6 @@ def spread_pdf(
             reasoning = hub_model_config["reasoning_effort"]
             valid_efforts = ["low", "medium", "high", "max"]
             if reasoning == "xhigh":
-                logger.info(f"[MODEL] Mapping reasoning_effort 'xhigh' to 'max'")
                 reasoning = "max"
             elif reasoning not in valid_efforts:
                 logger.warning(f"[MODEL] Invalid reasoning_effort '{reasoning}', defaulting to 'high'")
@@ -1888,24 +1920,24 @@ def spread_pdf(
             
         logger.info(f"[MODEL] Using Hub config: {model_name} (kwargs: {model_kwargs})")
     else:
-        # Environment variable or default
+        # Environment variable or default (Anthropic)
         model_name, model_kwargs = get_model_config_from_environment()
-        # Add extended thinking for Anthropic models
         if "claude" in model_name.lower() and extended_thinking:
             model_kwargs["extended_thinking"] = True
         logger.info(f"[MODEL] Using environment: {model_name}")
 
     # -------------------------------------------------------------------------
-    # STEP C2: Auto-detect period (if requested)
+    # STEP C2: Auto-detect period (if requested, using fast model)
     # -------------------------------------------------------------------------
     detected_period_info: Optional[FiscalPeriodDetection] = None
     if _should_autodetect_period(period):
         logger.info("[PERIOD] Auto-detecting reporting period from statement headers...")
+        detection_model, detection_kwargs = get_detection_model_config()
         detected_period, detected_period_info = _detect_fiscal_period(
             base64_images=base64_images,
             doc_type=doc_type,
-            model_name=model_name,
-            model_kwargs=model_kwargs,
+            model_name=detection_model,
+            model_kwargs=detection_kwargs,
             requested_period=period,
         )
         if detected_period != period:
@@ -2097,9 +2129,6 @@ def spread_pdf_multi_period(
     if model_override:
         model_name = model_override
         model_kwargs = {}
-        if any(x in model_override.lower() for x in ["gpt-5", "o1", "o3"]):
-            model_kwargs["reasoning_effort"] = os.getenv("OPENAI_REASONING_EFFORT", "high")
-        # Add extended thinking for Anthropic models
         if "claude" in model_override.lower() and extended_thinking:
             model_kwargs["extended_thinking"] = True
     else:
@@ -2111,30 +2140,28 @@ def spread_pdf_multi_period(
                 reasoning = hub_model_config["reasoning_effort"]
                 valid_efforts = ["low", "medium", "high", "max"]
                 if reasoning == "xhigh":
-                    logger.info(f"[MODEL] Mapping reasoning_effort 'xhigh' to 'max'")
                     reasoning = "max"
                 elif reasoning not in valid_efforts:
                     logger.warning(f"[MODEL] Invalid reasoning_effort '{reasoning}', defaulting to 'high'")
                     reasoning = "high"
                 model_kwargs["reasoning_effort"] = reasoning
-            # Add extended thinking for Anthropic models
             if "claude" in model_name.lower() and extended_thinking:
                 model_kwargs["extended_thinking"] = True
         else:
             model_name, model_kwargs = get_model_config_from_environment()
-            # Add extended thinking for Anthropic models
             if "claude" in model_name.lower() and extended_thinking:
                 model_kwargs["extended_thinking"] = True
     
     # -------------------------------------------------------------------------
-    # STEP C: Detect ALL Period Candidates
+    # STEP C: Detect ALL Period Candidates (using fast model)
     # -------------------------------------------------------------------------
     logger.info("[MULTI-PERIOD] Detecting all period columns...")
+    detection_model, detection_kwargs = get_detection_model_config()
     _, period_info = _detect_fiscal_period(
         base64_images=base64_images,
         doc_type=doc_type,
-        model_name=model_name,
-        model_kwargs=model_kwargs,
+        model_name=detection_model,
+        model_kwargs=detection_kwargs,
         requested_period="Latest",
     )
     
@@ -2145,15 +2172,15 @@ def spread_pdf_multi_period(
         logger.warning("[MULTI-PERIOD] No period candidates from detection step")
     
     # -------------------------------------------------------------------------
-    # STEP D: CLASSIFY COLUMNS (NEW - Separate Periods from Rollups)
+    # STEP D: CLASSIFY COLUMNS (using fast model - Separate Periods from Rollups)
     # -------------------------------------------------------------------------
     logger.info("[MULTI-PERIOD] Classifying columns (periods vs rollups)...")
     
     column_classification = _classify_columns(
         base64_images=base64_images,
         doc_type=doc_type,
-        model_name=model_name,
-        model_kwargs=model_kwargs,
+        model_name=detection_model,
+        model_kwargs=detection_kwargs,
         period_candidates=period_info.candidates if period_info else [],
     )
     
@@ -2346,8 +2373,6 @@ async def spread_pdf_combined(
     if model_override:
         model_name = model_override
         model_kwargs = {}
-        if any(x in model_override.lower() for x in ["gpt-5", "o1", "o3"]):
-            model_kwargs["reasoning_effort"] = os.getenv("OPENAI_REASONING_EFFORT", "high")
         if "claude" in model_override.lower() and extended_thinking:
             model_kwargs["extended_thinking"] = True
     else:
@@ -2360,7 +2385,6 @@ async def spread_pdf_combined(
                 reasoning = hub_model_config["reasoning_effort"]
                 valid_efforts = ["low", "medium", "high", "max"]
                 if reasoning == "xhigh":
-                    logger.info(f"[MODEL] Mapping reasoning_effort 'xhigh' to 'max'")
                     reasoning = "max"
                 elif reasoning not in valid_efforts:
                     logger.warning(f"[MODEL] Invalid reasoning_effort '{reasoning}', defaulting to 'high'")
@@ -2376,14 +2400,17 @@ async def spread_pdf_combined(
     logger.info(f"[COMBINED] Using model: {model_name}")
     
     # -------------------------------------------------------------------------
-    # STEP 3: Detect Statement Types
+    # STEP 3: Detect Statement Types (using fast model)
     # -------------------------------------------------------------------------
     logger.info("[COMBINED] Detecting statement types...")
     
+    # Use fast detection model for classification tasks
+    detection_model, detection_kwargs = get_detection_model_config()
+    
     detection = _detect_statement_types(
         base64_images=base64_images,
-        model_name=model_name,
-        model_kwargs=model_kwargs,
+        model_name=detection_model,
+        model_kwargs=detection_kwargs,
     )
     
     logger.info(
@@ -2590,8 +2617,6 @@ def _get_excel_model_config(
     if model_override:
         model_name = model_override
         model_kwargs = {}
-        if any(x in model_override.lower() for x in ["gpt-5", "o1", "o3"]):
-            model_kwargs["reasoning_effort"] = os.getenv("OPENAI_REASONING_EFFORT", "high")
         if "claude" in model_override.lower() and extended_thinking:
             model_kwargs["extended_thinking"] = True
     else:
@@ -2604,7 +2629,6 @@ def _get_excel_model_config(
                 reasoning = hub_model_config["reasoning_effort"]
                 valid_efforts = ["low", "medium", "high", "max"]
                 if reasoning == "xhigh":
-                    logger.info(f"[MODEL] Mapping reasoning_effort 'xhigh' to 'max'")
                     reasoning = "max"
                 elif reasoning not in valid_efforts:
                     logger.warning(f"[MODEL] Invalid reasoning_effort '{reasoning}', defaulting to 'high'")

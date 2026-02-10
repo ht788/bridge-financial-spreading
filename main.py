@@ -49,7 +49,7 @@ def setup_logging(verbose: bool = False) -> None:
     
     # Reduce noise from third-party libraries
     logging.getLogger("httpx").setLevel(logging.WARNING)
-    logging.getLogger("openai").setLevel(logging.WARNING)
+    logging.getLogger("anthropic").setLevel(logging.WARNING)
     logging.getLogger("httpcore").setLevel(logging.WARNING)
     logging.getLogger("langsmith").setLevel(logging.INFO)
 
@@ -65,8 +65,8 @@ def validate_environment() -> bool:
     """
     logger = logging.getLogger(__name__)
     
-    # Required for LLM calls
-    required_vars = ["OPENAI_API_KEY"]
+    # Required for LLM calls (Anthropic Claude is the primary provider)
+    required_vars = ["ANTHROPIC_API_KEY"]
     
     # Required for full LangSmith integration
     langsmith_vars = ["LANGSMITH_API_KEY"]
@@ -115,14 +115,14 @@ def print_langsmith_info():
     
     api_key = os.getenv("LANGSMITH_API_KEY")
     project = os.getenv("LANGSMITH_PROJECT", "default")
-    openai_key = os.getenv("OPENAI_API_KEY")
+    anthropic_key = os.getenv("ANTHROPIC_API_KEY")
     
-    # OpenAI status
-    if openai_key:
-        masked_openai = openai_key[:7] + "..." + openai_key[-4:] if len(openai_key) > 11 else "***"
-        print(f"  OPENAI_API_KEY:     {masked_openai} [OK]")
+    # Anthropic status (primary provider)
+    if anthropic_key:
+        masked_anthropic = anthropic_key[:10] + "..." + anthropic_key[-4:] if len(anthropic_key) > 14 else "***"
+        print(f"  ANTHROPIC_API_KEY:  {masked_anthropic} [OK]")
     else:
-        print("  OPENAI_API_KEY:     NOT SET [ERROR]")
+        print("  ANTHROPIC_API_KEY:  NOT SET [ERROR]")
     
     # LangSmith status
     if api_key:

@@ -123,6 +123,25 @@ MODEL_REGISTRY: List[ModelDefinition] = [
         recommended_use="General purpose financial spreading with excellent quality",
         cost_tier="medium"
     ),
+    
+    # =========================================================================
+    # ANTHROPIC MODELS (Fast - Claude 3.5 Haiku)
+    # =========================================================================
+    ModelDefinition(
+        id="claude-3-5-haiku-20241022",
+        name="Claude 3.5 Haiku",
+        provider=ModelProvider.ANTHROPIC,
+        description="Fast, cost-efficient model ideal for document detection and classification tasks",
+        capabilities=[
+            ModelCapability.VISION,
+            ModelCapability.STRUCTURED_OUTPUT
+        ],
+        is_default=False,
+        supports_reasoning_effort=False,
+        supports_extended_thinking=False,
+        recommended_use="Document detection, column classification, and other fast classification tasks",
+        cost_tier="low"
+    ),
 ]
 
 
@@ -157,6 +176,15 @@ def get_models_by_provider(provider: ModelProvider) -> List[ModelDefinition]:
 def get_models_with_capability(capability: ModelCapability) -> List[ModelDefinition]:
     """Get all models with a specific capability"""
     return [m for m in MODEL_REGISTRY if capability in m.capabilities]
+
+
+def get_fast_model() -> ModelDefinition:
+    """Get the fastest/cheapest model suitable for detection and classification tasks."""
+    fast = next((m for m in MODEL_REGISTRY if m.cost_tier == "low" and ModelCapability.VISION in m.capabilities), None)
+    if not fast:
+        # Fallback to first non-premium model
+        fast = next((m for m in MODEL_REGISTRY if m.cost_tier != "premium"), None)
+    return fast or MODEL_REGISTRY[0]
 
 
 def get_vision_models() -> List[ModelDefinition]:

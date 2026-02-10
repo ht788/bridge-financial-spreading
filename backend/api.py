@@ -338,7 +338,7 @@ async def spread_financial_statement(
         period: Fiscal period to extract
         max_pages: Maximum pages to process
         dpi: DPI for PDF image conversion
-        model_override: Optional model override (e.g., 'gpt-5', 'gpt-4o')
+        model_override: Optional model override (e.g., 'claude-opus-4-6', 'claude-sonnet-4-5')
         extended_thinking: Enable extended thinking for Anthropic models (default False)
         
     Returns:
@@ -725,7 +725,7 @@ async def spread_batch(
         period: Fiscal period to extract
         max_pages: Maximum pages per file
         dpi: DPI for PDF conversion
-        model_override: Optional model override (e.g., 'gpt-5', 'gpt-4o')
+        model_override: Optional model override (e.g., 'claude-opus-4-6', 'claude-sonnet-4-5')
         extended_thinking: Enable extended thinking for Anthropic models (default False)
         parallel: If True (default), process files in parallel; if False, sequential
         max_concurrent: Maximum number of concurrent file extractions (default: 4)
@@ -1468,8 +1468,8 @@ async def startup_event():
     logger.info(f"Upload directory: {UPLOAD_DIR}")
     
     # Check environment variables
-    if not os.getenv("OPENAI_API_KEY") and not os.getenv("ANTHROPIC_API_KEY"):
-        logger.warning("No AI API keys set - spreading will fail!")
+    if not os.getenv("ANTHROPIC_API_KEY"):
+        logger.warning("ANTHROPIC_API_KEY not set - spreading will fail!")
     
     if not os.getenv("LANGSMITH_API_KEY"):
         logger.warning("LANGSMITH_API_KEY not set - no tracing available")
