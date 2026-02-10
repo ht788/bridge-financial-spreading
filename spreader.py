@@ -1115,8 +1115,8 @@ def load_from_hub(doc_type: str) -> Tuple[ChatPromptTemplate, Optional[dict]]:
     Environment Variables:
         USE_LOCAL_PROMPTS: Set to 'true' to skip Hub and use local prompts
     
-    Uses `include_model=True` to pull the full chain including model config
-    when a model is configured in LangSmith Hub.
+    Pulls prompt templates from LangSmith Hub. Model selection is handled
+    locally via model_config.py and environment variables.
     
     Args:
         doc_type: Type of document ('income' or 'balance')
@@ -1149,7 +1149,6 @@ def load_from_hub(doc_type: str) -> Tuple[ChatPromptTemplate, Optional[dict]]:
     
     try:
         from langsmith import Client
-        from langchain_core.runnables import RunnableSequence, RunnableBinding
     except ImportError as e:
         logger.warning(f"[HUB] langsmith not installed, using fallback prompt: {e}")
         _fallback_prompt_used = True
@@ -1161,41 +1160,13 @@ def load_from_hub(doc_type: str) -> Tuple[ChatPromptTemplate, Optional[dict]]:
     try:
         client = Client()
         
-        # Pull the prompt WITH model config using include_model=True
-        hub_object = client.pull_prompt(prompt_name, include_model=True)
+        # Pull ONLY the prompt template (not the model config).
+        # Model selection is handled locally via model_config.py and environment
+        # variables, not from the Hub. This avoids the Hub overriding our
+        # Anthropic model config with a stale OpenAI model.
+        hub_object = client.pull_prompt(prompt_name, include_model=False)
         
-        model_config = None
         prompt = hub_object
-        
-        # If model is configured, we get a RunnableSequence (prompt | model)
-        if isinstance(hub_object, RunnableSequence):
-            logger.info(f"[HUB] Prompt has bound model configuration")
-            
-            # Extract the prompt template (first element)
-            prompt = hub_object.first
-            
-            # Extract model config from the last element (RunnableBinding or ChatAnthropic/ChatOpenAI)
-            model_obj = hub_object.last
-            
-            # Handle RunnableBinding wrapper
-            if isinstance(model_obj, RunnableBinding) and hasattr(model_obj, 'bound'):
-                model_obj = model_obj.bound
-            
-            # Extract model configuration
-            model_config = {}
-            
-            # Core model settings
-            if hasattr(model_obj, 'model_name'):
-                model_config["model"] = model_obj.model_name
-            if hasattr(model_obj, 'max_tokens') and model_obj.max_tokens:
-                model_config["max_tokens"] = model_obj.max_tokens
-            if hasattr(model_obj, 'temperature') and model_obj.temperature is not None:
-                model_config["temperature"] = model_obj.temperature
-            if hasattr(model_obj, 'reasoning_effort') and model_obj.reasoning_effort:
-                model_config["reasoning_effort"] = model_obj.reasoning_effort
-            
-            if model_config:
-                logger.info(f"[HUB] Model config from Hub: {model_config}")
         
         # Log commit hash
         commit_hash = "unknown"
@@ -1203,7 +1174,8 @@ def load_from_hub(doc_type: str) -> Tuple[ChatPromptTemplate, Optional[dict]]:
             commit_hash = prompt.metadata.get('lc_hub_commit_hash', 'unknown')[:8]
         logger.info(f"[HUB] Loaded '{prompt_name}' (commit: {commit_hash})")
         
-        return prompt, model_config
+        # Return None for model_config - model selection is local
+        return prompt, None
         
     except Exception as e:
         # Fall back to local prompt instead of failing
@@ -1881,11 +1853,11 @@ def spread_pdf(
     # -------------------------------------------------------------------------
     schema_class = get_schema_for_doc_type(doc_type)
     
-    # Always load from Hub - fail fast if unavailable
-    prompt, hub_model_config = load_from_hub(doc_type)
+    # Load prompt from Hub (model config is handled locally, not from Hub)
+    prompt, _ = load_from_hub(doc_type)
     
     # -------------------------------------------------------------------------
-    # STEP C: Determine Model (Priority: Override > Hub > Env > Default)
+    # STEP C: Determine Model (Priority: Override > Env > Default)
     # -------------------------------------------------------------------------
     if model_override:
         # Testing override - user explicitly requested a different model
@@ -1894,37 +1866,12 @@ def spread_pdf(
         if "claude" in model_override.lower() and extended_thinking:
             model_kwargs["extended_thinking"] = True
         logger.info(f"[MODEL] Using override: {model_name}")
-    elif hub_model_config and hub_model_config.get("model"):
-        # Model from LangSmith Hub - use full configuration from the prompt
-        model_name = hub_model_config["model"]
-        model_kwargs = {}
-        
-        # Transfer Hub model settings to model_kwargs
-        if hub_model_config.get("max_tokens"):
-            model_kwargs["max_tokens"] = hub_model_config["max_tokens"]
-        if hub_model_config.get("temperature") is not None:
-            model_kwargs["temperature"] = hub_model_config["temperature"]
-        if hub_model_config.get("reasoning_effort"):
-            reasoning = hub_model_config["reasoning_effort"]
-            valid_efforts = ["low", "medium", "high", "max"]
-            if reasoning == "xhigh":
-                reasoning = "max"
-            elif reasoning not in valid_efforts:
-                logger.warning(f"[MODEL] Invalid reasoning_effort '{reasoning}', defaulting to 'high'")
-                reasoning = "high"
-            model_kwargs["reasoning_effort"] = reasoning
-        
-        # Add extended thinking for Anthropic models
-        if "claude" in model_name.lower() and extended_thinking:
-            model_kwargs["extended_thinking"] = True
-            
-        logger.info(f"[MODEL] Using Hub config: {model_name} (kwargs: {model_kwargs})")
     else:
-        # Environment variable or default (Anthropic)
+        # Use environment variable or default (Anthropic Claude)
         model_name, model_kwargs = get_model_config_from_environment()
         if "claude" in model_name.lower() and extended_thinking:
             model_kwargs["extended_thinking"] = True
-        logger.info(f"[MODEL] Using environment: {model_name}")
+        logger.info(f"[MODEL] Using: {model_name}")
 
     # -------------------------------------------------------------------------
     # STEP C2: Auto-detect period (if requested, using fast model)
@@ -2132,25 +2079,9 @@ def spread_pdf_multi_period(
         if "claude" in model_override.lower() and extended_thinking:
             model_kwargs["extended_thinking"] = True
     else:
-        prompt, hub_model_config = load_from_hub(doc_type)
-        if hub_model_config and hub_model_config.get("model"):
-            model_name = hub_model_config["model"]
-            model_kwargs = {}
-            if hub_model_config.get("reasoning_effort"):
-                reasoning = hub_model_config["reasoning_effort"]
-                valid_efforts = ["low", "medium", "high", "max"]
-                if reasoning == "xhigh":
-                    reasoning = "max"
-                elif reasoning not in valid_efforts:
-                    logger.warning(f"[MODEL] Invalid reasoning_effort '{reasoning}', defaulting to 'high'")
-                    reasoning = "high"
-                model_kwargs["reasoning_effort"] = reasoning
-            if "claude" in model_name.lower() and extended_thinking:
-                model_kwargs["extended_thinking"] = True
-        else:
-            model_name, model_kwargs = get_model_config_from_environment()
-            if "claude" in model_name.lower() and extended_thinking:
-                model_kwargs["extended_thinking"] = True
+        model_name, model_kwargs = get_model_config_from_environment()
+        if "claude" in model_name.lower() and extended_thinking:
+            model_kwargs["extended_thinking"] = True
     
     # -------------------------------------------------------------------------
     # STEP C: Detect ALL Period Candidates (using fast model)
@@ -2376,25 +2307,8 @@ async def spread_pdf_combined(
         if "claude" in model_override.lower() and extended_thinking:
             model_kwargs["extended_thinking"] = True
     else:
-        # Use income statement prompt for model config (both use same model)
-        prompt, hub_model_config = load_from_hub("income")
-        if hub_model_config and hub_model_config.get("model"):
-            model_name = hub_model_config["model"]
-            model_kwargs = {}
-            if hub_model_config.get("reasoning_effort"):
-                reasoning = hub_model_config["reasoning_effort"]
-                valid_efforts = ["low", "medium", "high", "max"]
-                if reasoning == "xhigh":
-                    reasoning = "max"
-                elif reasoning not in valid_efforts:
-                    logger.warning(f"[MODEL] Invalid reasoning_effort '{reasoning}', defaulting to 'high'")
-                    reasoning = "high"
-                model_kwargs["reasoning_effort"] = reasoning
-            if "claude" in model_name.lower() and extended_thinking:
-                model_kwargs["extended_thinking"] = True
-        else:
-            model_name, model_kwargs = get_model_config_from_environment()
-            if "claude" in model_name.lower() and extended_thinking:
+        model_name, model_kwargs = get_model_config_from_environment()
+        if "claude" in model_name.lower() and extended_thinking:
                 model_kwargs["extended_thinking"] = True
     
     logger.info(f"[COMBINED] Using model: {model_name}")
@@ -2620,26 +2534,9 @@ def _get_excel_model_config(
         if "claude" in model_override.lower() and extended_thinking:
             model_kwargs["extended_thinking"] = True
     else:
-        # Use income statement prompt for model config
-        prompt, hub_model_config = load_from_hub("income")
-        if hub_model_config and hub_model_config.get("model"):
-            model_name = hub_model_config["model"]
-            model_kwargs = {}
-            if hub_model_config.get("reasoning_effort"):
-                reasoning = hub_model_config["reasoning_effort"]
-                valid_efforts = ["low", "medium", "high", "max"]
-                if reasoning == "xhigh":
-                    reasoning = "max"
-                elif reasoning not in valid_efforts:
-                    logger.warning(f"[MODEL] Invalid reasoning_effort '{reasoning}', defaulting to 'high'")
-                    reasoning = "high"
-                model_kwargs["reasoning_effort"] = reasoning
-            if "claude" in model_name.lower() and extended_thinking:
-                model_kwargs["extended_thinking"] = True
-        else:
-            model_name, model_kwargs = get_model_config_from_environment()
-            if "claude" in model_name.lower() and extended_thinking:
-                model_kwargs["extended_thinking"] = True
+        model_name, model_kwargs = get_model_config_from_environment()
+        if "claude" in model_name.lower() and extended_thinking:
+            model_kwargs["extended_thinking"] = True
     
     return model_name, model_kwargs
 
