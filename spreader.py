@@ -1326,51 +1326,31 @@ def _create_anthropic_llm(model_name: str, model_kwargs: Optional[dict] = None):
         "api_key": anthropic_api_key,
     }
     
-    # Anthropic: map reasoning_effort to effort parameter, use adaptive thinking for Opus 4.6
+    # Filter model_kwargs for Anthropic compatibility.
+    # NOTE: Thinking (adaptive/extended) is NOT auto-enabled because it conflicts
+    # with with_structured_output() which uses tool_choice (forced tool use).
+    # Thinking is only enabled when explicitly requested AND the caller handles
+    # the tool_choice incompatibility.
     if model_kwargs:
         filtered_kwargs = {}
-        effort_level = "high"  # Default effort for Anthropic
-        user_opted_max = False
         
         for k, v in model_kwargs.items():
             if k == "reasoning_effort":
                 # Map reasoning_effort to Anthropic effort parameter
-                effort_map = {"xhigh": "max", "max": "max", "high": "high", "medium": "medium", "low": "low"}
+                effort_map = {"xhigh": "high", "max": "high", "high": "high", "medium": "medium", "low": "low"}
                 effort_level = effort_map.get(v, "high")
-                if effort_level == "max":
-                    user_opted_max = True
-                    logger.info("[ANTHROPIC] User opted in to max effort")
+                # Use output_config effort for Opus 4.6 (without thinking)
+                if "opus-4-6" in model_name.lower():
+                    filtered_kwargs["output_config"] = {"effort": effort_level}
+                    logger.info(f"[ANTHROPIC] Opus 4.6 effort={effort_level}")
             elif k == "extended_thinking":
-                if v:
-                    user_opted_max = True  # User opted in to max effort
-                    logger.info("[ANTHROPIC] Extended thinking enabled - using max effort")
+                # Skip - thinking conflicts with structured output (tool_choice)
+                logger.info("[ANTHROPIC] extended_thinking requested but skipped (incompatible with structured output)")
             else:
                 filtered_kwargs[k] = v
         
-        # Opus 4.6: use adaptive thinking (recommended by Anthropic docs)
-        if "opus-4-6" in model_name.lower():
-            filtered_kwargs["thinking"] = {"type": "adaptive"}
-            if user_opted_max:
-                effort_level = "max"
-            filtered_kwargs["output_config"] = {"effort": effort_level}
-            logger.info(f"[ANTHROPIC] Opus 4.6 adaptive thinking with effort={effort_level}")
-        else:
-            # Sonnet 4.5: use extended thinking if opted in
-            if user_opted_max and "sonnet-4-5" in model_name.lower():
-                filtered_kwargs["thinking"] = {"type": "enabled", "budget_tokens": 10000}
-                logger.info("[ANTHROPIC] Using manual extended thinking (budget_tokens=10000)")
-            # Haiku and other models: no thinking support, just skip
-        
         if filtered_kwargs:
             llm_config["model_kwargs"] = filtered_kwargs
-    else:
-        # No model_kwargs: still enable adaptive thinking for Opus 4.6
-        if "opus-4-6" in model_name.lower():
-            llm_config["model_kwargs"] = {
-                "thinking": {"type": "adaptive"},
-                "output_config": {"effort": "high"}
-            }
-            logger.info("[ANTHROPIC] Opus 4.6 adaptive thinking with effort=high (default)")
     
     # ChatAnthropic automatically traces to LangSmith when LANGSMITH_API_KEY is set
     return ChatAnthropic(**llm_config)
