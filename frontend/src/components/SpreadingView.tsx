@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { PDFViewer } from './PDFViewer';
 import { FinancialTable } from './FinancialTable';
 import { ExportMenu } from './ExportMenu';
+import { LendingAnalysisPanel } from './LendingAnalysisPanel';
 import { 
   SpreadMetadata, 
   FinancialStatement, 
@@ -270,6 +271,15 @@ export const SpreadingView: React.FC<SpreadingViewProps> = ({
                   docType={effectiveDocType} 
                   onPeriodSelect={handlePeriodSelect}
                 />
+                
+                {/* Lending Analysis Panel - Only show for Income Statement data */}
+                {effectiveDocType === 'income' && (
+                  <LendingAnalysisPanel 
+                    data={displayData}
+                    currency={isMultiPeriod(displayData) ? (displayData as MultiPeriodIncomeStatement).currency : undefined}
+                    scale={isMultiPeriod(displayData) ? (displayData as MultiPeriodIncomeStatement).scale : undefined}
+                  />
+                )}
                 
                 {/* JSON Data Viewer - Discrete Section */}
                 <JsonViewerContainer title="Raw Extraction Data">
