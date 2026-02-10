@@ -375,8 +375,9 @@ def _detect_statement_types(
         "6. Set confidence based on how clearly the statement type is identifiable\n"
     )
     
-    # Analyze up to first 6 pages (should cover most financial packets)
-    pages_to_analyze = min(6, len(base64_images))
+    # Analyze up to first 15 pages (audited financials with cover pages,
+    # auditor's reports, and supplementary info can have statements after page 6)
+    pages_to_analyze = min(15, len(base64_images))
     
     text_prompt = (
         f"Analyze these {pages_to_analyze} pages and identify which financial statements are present.\n"
@@ -1838,16 +1839,10 @@ def spread_pdf(
             model_kwargs["temperature"] = hub_model_config["temperature"]
         if hub_model_config.get("reasoning_effort"):
             reasoning = hub_model_config["reasoning_effort"]
-            # gpt-5.2-chat-latest only supports 'medium' for reasoning_effort
-            # Map any invalid value to 'medium'
-            valid_efforts = ["low", "medium", "high"]
+            valid_efforts = ["low", "medium", "high", "xhigh"]
             if reasoning not in valid_efforts:
-                logger.warning(f"[MODEL] Invalid reasoning_effort '{reasoning}', defaulting to 'medium'")
-                reasoning = "medium"
-            # For gpt-5.2-chat models, only 'medium' is supported
-            if "gpt-5.2" in model_name.lower() and reasoning != "medium":
-                logger.warning(f"[MODEL] gpt-5.2 only supports reasoning_effort='medium', overriding '{reasoning}'")
-                reasoning = "medium"
+                logger.warning(f"[MODEL] Invalid reasoning_effort '{reasoning}', defaulting to 'high'")
+                reasoning = "high"
             model_kwargs["reasoning_effort"] = reasoning
         
         # Add extended thinking for Anthropic models
@@ -2077,11 +2072,9 @@ def spread_pdf_multi_period(
             model_kwargs = {}
             if hub_model_config.get("reasoning_effort"):
                 reasoning = hub_model_config["reasoning_effort"]
-                valid_efforts = ["low", "medium", "high"]
+                valid_efforts = ["low", "medium", "high", "xhigh"]
                 if reasoning not in valid_efforts:
-                    reasoning = "medium"
-                if "gpt-5.2" in model_name.lower() and reasoning != "medium":
-                    reasoning = "medium"
+                    reasoning = "high"
                 model_kwargs["reasoning_effort"] = reasoning
             # Add extended thinking for Anthropic models
             if "claude" in model_name.lower() and extended_thinking:
@@ -2324,11 +2317,9 @@ async def spread_pdf_combined(
             model_kwargs = {}
             if hub_model_config.get("reasoning_effort"):
                 reasoning = hub_model_config["reasoning_effort"]
-                valid_efforts = ["low", "medium", "high"]
+                valid_efforts = ["low", "medium", "high", "xhigh"]
                 if reasoning not in valid_efforts:
-                    reasoning = "medium"
-                if "gpt-5.2" in model_name.lower() and reasoning != "medium":
-                    reasoning = "medium"
+                    reasoning = "high"
                 model_kwargs["reasoning_effort"] = reasoning
             if "claude" in model_name.lower() and extended_thinking:
                 model_kwargs["extended_thinking"] = True
@@ -2566,11 +2557,9 @@ def _get_excel_model_config(
             model_kwargs = {}
             if hub_model_config.get("reasoning_effort"):
                 reasoning = hub_model_config["reasoning_effort"]
-                valid_efforts = ["low", "medium", "high"]
+                valid_efforts = ["low", "medium", "high", "xhigh"]
                 if reasoning not in valid_efforts:
-                    reasoning = "medium"
-                if "gpt-5.2" in model_name.lower() and reasoning != "medium":
-                    reasoning = "medium"
+                    reasoning = "high"
                 model_kwargs["reasoning_effort"] = reasoning
             if "claude" in model_name.lower() and extended_thinking:
                 model_kwargs["extended_thinking"] = True
