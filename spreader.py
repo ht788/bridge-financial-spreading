@@ -1327,22 +1327,50 @@ def create_llm(
             "api_key": anthropic_api_key,
         }
         
-        # Anthropic supports extended_thinking but not reasoning_effort
+        # Anthropic: map reasoning_effort to effort parameter, use adaptive thinking for Opus 4.6
         if model_kwargs:
             filtered_kwargs = {}
+            effort_level = "high"  # Default effort for Anthropic
+            user_opted_max = False
+            
             for k, v in model_kwargs.items():
                 if k == "reasoning_effort":
-                    # Ignore reasoning_effort for Anthropic
-                    continue
+                    # Map reasoning_effort to Anthropic effort parameter
+                    effort_map = {"xhigh": "max", "max": "max", "high": "high", "medium": "medium", "low": "low"}
+                    effort_level = effort_map.get(v, "high")
+                    if effort_level == "max":
+                        user_opted_max = True
+                        logger.info("[ANTHROPIC] User opted in to max effort")
                 elif k == "extended_thinking":
-                    # Map extended_thinking to Anthropic's thinking parameter
                     if v:
-                        filtered_kwargs["thinking"] = {"type": "enabled", "budget_tokens": 10000}
+                        user_opted_max = True  # User opted in to max effort
+                        logger.info("[ANTHROPIC] Extended thinking enabled - using max effort")
                 else:
                     filtered_kwargs[k] = v
             
+            # Opus 4.6: use adaptive thinking (recommended by Anthropic docs)
+            if "opus-4-6" in model_name.lower():
+                filtered_kwargs["thinking"] = {"type": "adaptive"}
+                if user_opted_max:
+                    effort_level = "max"
+                filtered_kwargs["output_config"] = {"effort": effort_level}
+                logger.info(f"[ANTHROPIC] Opus 4.6 adaptive thinking with effort={effort_level}")
+            else:
+                # Older Anthropic models: use manual extended thinking if opted in
+                if user_opted_max:
+                    filtered_kwargs["thinking"] = {"type": "enabled", "budget_tokens": 10000}
+                    logger.info("[ANTHROPIC] Using manual extended thinking (budget_tokens=10000)")
+            
             if filtered_kwargs:
                 llm_config["model_kwargs"] = filtered_kwargs
+        else:
+            # No model_kwargs: still enable adaptive thinking for Opus 4.6
+            if "opus-4-6" in model_name.lower():
+                llm_config["model_kwargs"] = {
+                    "thinking": {"type": "adaptive"},
+                    "output_config": {"effort": "high"}
+                }
+                logger.info("[ANTHROPIC] Opus 4.6 adaptive thinking with effort=high (default)")
         
         # ChatAnthropic automatically traces to LangSmith when LANGSMITH_API_KEY is set
         return ChatAnthropic(**llm_config)
@@ -1363,6 +1391,12 @@ def create_llm(
         
         # Add model_kwargs if present (e.g., reasoning_effort)
         if model_kwargs:
+            # Sanitize reasoning_effort for OpenAI - block values not supported
+            if "reasoning_effort" in model_kwargs:
+                re_val = model_kwargs["reasoning_effort"]
+                if re_val in ("max", "xhigh"):
+                    logger.warning(f"[OPENAI] reasoning_effort '{re_val}' not supported by OpenAI, downgrading to 'high'")
+                    model_kwargs["reasoning_effort"] = "high"
             llm_config["model_kwargs"] = model_kwargs
         
         # ChatOpenAI automatically traces to LangSmith when LANGSMITH_API_KEY is set
@@ -1839,10 +1873,10 @@ def spread_pdf(
             model_kwargs["temperature"] = hub_model_config["temperature"]
         if hub_model_config.get("reasoning_effort"):
             reasoning = hub_model_config["reasoning_effort"]
-            valid_efforts = ["low", "medium", "high"]
+            valid_efforts = ["low", "medium", "high", "max"]
             if reasoning == "xhigh":
-                logger.warning(f"[MODEL] reasoning_effort 'xhigh' not supported by OpenAI, downgrading to 'high'")
-                reasoning = "high"
+                logger.info(f"[MODEL] Mapping reasoning_effort 'xhigh' to 'max'")
+                reasoning = "max"
             elif reasoning not in valid_efforts:
                 logger.warning(f"[MODEL] Invalid reasoning_effort '{reasoning}', defaulting to 'high'")
                 reasoning = "high"
@@ -2075,10 +2109,10 @@ def spread_pdf_multi_period(
             model_kwargs = {}
             if hub_model_config.get("reasoning_effort"):
                 reasoning = hub_model_config["reasoning_effort"]
-                valid_efforts = ["low", "medium", "high"]
+                valid_efforts = ["low", "medium", "high", "max"]
                 if reasoning == "xhigh":
-                    logger.warning(f"[MODEL] reasoning_effort 'xhigh' not supported by OpenAI, downgrading to 'high'")
-                    reasoning = "high"
+                    logger.info(f"[MODEL] Mapping reasoning_effort 'xhigh' to 'max'")
+                    reasoning = "max"
                 elif reasoning not in valid_efforts:
                     logger.warning(f"[MODEL] Invalid reasoning_effort '{reasoning}', defaulting to 'high'")
                     reasoning = "high"
@@ -2324,10 +2358,10 @@ async def spread_pdf_combined(
             model_kwargs = {}
             if hub_model_config.get("reasoning_effort"):
                 reasoning = hub_model_config["reasoning_effort"]
-                valid_efforts = ["low", "medium", "high"]
+                valid_efforts = ["low", "medium", "high", "max"]
                 if reasoning == "xhigh":
-                    logger.warning(f"[MODEL] reasoning_effort 'xhigh' not supported by OpenAI, downgrading to 'high'")
-                    reasoning = "high"
+                    logger.info(f"[MODEL] Mapping reasoning_effort 'xhigh' to 'max'")
+                    reasoning = "max"
                 elif reasoning not in valid_efforts:
                     logger.warning(f"[MODEL] Invalid reasoning_effort '{reasoning}', defaulting to 'high'")
                     reasoning = "high"
@@ -2568,10 +2602,10 @@ def _get_excel_model_config(
             model_kwargs = {}
             if hub_model_config.get("reasoning_effort"):
                 reasoning = hub_model_config["reasoning_effort"]
-                valid_efforts = ["low", "medium", "high"]
+                valid_efforts = ["low", "medium", "high", "max"]
                 if reasoning == "xhigh":
-                    logger.warning(f"[MODEL] reasoning_effort 'xhigh' not supported by OpenAI, downgrading to 'high'")
-                    reasoning = "high"
+                    logger.info(f"[MODEL] Mapping reasoning_effort 'xhigh' to 'max'")
+                    reasoning = "max"
                 elif reasoning not in valid_efforts:
                     logger.warning(f"[MODEL] Invalid reasoning_effort '{reasoning}', defaulting to 'high'")
                     reasoning = "high"

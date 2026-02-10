@@ -292,7 +292,7 @@ class TestRunResult(BaseModel):
 class TestRunConfig(BaseModel):
     """Configuration for executing a test run"""
     company_id: str = Field(description="Company to test")
-    model_name: str = Field(default="claude-opus-4-5", description="Model to use for extraction")
+    model_name: str = Field(default="claude-opus-4-6", description="Model to use for extraction")
     prompt_override: Optional[str] = Field(
         default=None, 
         description="Custom prompt to use instead of Hub prompt"

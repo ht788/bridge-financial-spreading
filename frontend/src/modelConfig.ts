@@ -32,17 +32,17 @@ export interface ModelDefinition {
  */
 export const MODEL_REGISTRY: ModelDefinition[] = [
   // =========================================================================
-  // ANTHROPIC MODELS (Latest - Claude 4.5 Series)
+  // ANTHROPIC MODELS (Latest - Claude 4.6 Series)
   // =========================================================================
   {
-    id: 'claude-opus-4-5',
-    name: 'Claude Opus 4.5',
+    id: 'claude-opus-4-6',
+    name: 'Claude Opus 4.6',
     provider: 'anthropic',
-    description: 'Most capable Claude model with superior reasoning and analysis',
+    description: 'Most capable Claude model with superior reasoning, 1M context window, and adaptive thinking',
     capabilities: ['vision', 'reasoning', 'structured_output'],
     isDefault: true, // Set as default for highest accuracy
-    supportsReasoningEffort: false, // Anthropic doesn't use reasoning_effort
-    supportsExtendedThinking: true,  // Supports extended thinking
+    supportsReasoningEffort: true, // Opus 4.6 supports effort parameter (low/medium/high/max)
+    supportsExtendedThinking: true,  // Supports adaptive thinking
     recommendedUse: 'Complex financial documents requiring highest accuracy',
     costTier: 'premium'
   },

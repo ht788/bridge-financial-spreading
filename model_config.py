@@ -88,21 +88,21 @@ class ModelDefinition(BaseModel):
 
 MODEL_REGISTRY: List[ModelDefinition] = [
     # =========================================================================
-    # ANTHROPIC MODELS (Latest - Claude 4.5 Series)
+    # ANTHROPIC MODELS (Latest - Claude 4.6 Series)
     # =========================================================================
     ModelDefinition(
-        id="claude-opus-4-5",
-        name="Claude Opus 4.5",
+        id="claude-opus-4-6",
+        name="Claude Opus 4.6",
         provider=ModelProvider.ANTHROPIC,
-        description="Most capable Claude model with superior reasoning and analysis",
+        description="Most capable Claude model with superior reasoning, 1M context window, and adaptive thinking",
         capabilities=[
             ModelCapability.VISION,
             ModelCapability.REASONING,
             ModelCapability.STRUCTURED_OUTPUT
         ],
         is_default=True,  # Set as default for highest accuracy
-        supports_reasoning_effort=False,  # Anthropic doesn't use reasoning_effort
-        supports_extended_thinking=True,   # Supports extended thinking
+        supports_reasoning_effort=True,   # Opus 4.6 supports effort parameter (low/medium/high/max)
+        supports_extended_thinking=True,   # Supports adaptive thinking
         recommended_use="Complex financial documents requiring highest accuracy",
         cost_tier="premium"
     ),
@@ -118,7 +118,7 @@ MODEL_REGISTRY: List[ModelDefinition] = [
             ModelCapability.STRUCTURED_OUTPUT
         ],
         is_default=False,
-        supports_reasoning_effort=False,  # Anthropic doesn't use reasoning_effort
+        supports_reasoning_effort=False,  # Sonnet 4.5 doesn't support effort parameter
         supports_extended_thinking=True,   # Supports extended thinking
         recommended_use="General purpose financial spreading with excellent quality",
         cost_tier="medium"
