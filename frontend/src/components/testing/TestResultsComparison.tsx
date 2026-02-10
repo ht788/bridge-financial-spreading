@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useCallback, useRef, useEffect } from 'react';
 import { 
   CheckCircle, XCircle, AlertCircle, MinusCircle, 
   ChevronDown, FileText, Clock, Target, BarChart3,
@@ -206,6 +206,42 @@ export const TestResultsComparison: React.FC<TestResultsComparisonProps> = ({ re
   
   // Check if file is a PDF (vs Excel which can't be previewed)
   const isPdfFile = selectedFile?.filename.toLowerCase().endsWith('.pdf');
+
+  // --- Resizable split pane logic ---
+  const [leftPanelPct, setLeftPanelPct] = useState(50);
+  const isDragging = useRef(false);
+  const splitContainerRef = useRef<HTMLDivElement>(null);
+
+  const handleDividerMouseDown = useCallback((e: React.MouseEvent) => {
+    e.preventDefault();
+    isDragging.current = true;
+    document.body.style.cursor = 'col-resize';
+    document.body.style.userSelect = 'none';
+  }, []);
+
+  useEffect(() => {
+    const handleMouseMove = (e: MouseEvent) => {
+      if (!isDragging.current || !splitContainerRef.current) return;
+      const rect = splitContainerRef.current.getBoundingClientRect();
+      const newPct = ((e.clientX - rect.left) / rect.width) * 100;
+      setLeftPanelPct(Math.min(80, Math.max(20, newPct)));
+    };
+
+    const handleMouseUp = () => {
+      if (isDragging.current) {
+        isDragging.current = false;
+        document.body.style.cursor = '';
+        document.body.style.userSelect = '';
+      }
+    };
+
+    window.addEventListener('mousemove', handleMouseMove);
+    window.addEventListener('mouseup', handleMouseUp);
+    return () => {
+      window.removeEventListener('mousemove', handleMouseMove);
+      window.removeEventListener('mouseup', handleMouseUp);
+    };
+  }, []);
 
   return (
     <div className="flex flex-col h-[calc(100vh-140px)]">

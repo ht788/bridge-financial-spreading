@@ -14,7 +14,7 @@ import {
 import { formatCurrency, fieldNameToLabel, normalizePeriodLabel } from '../utils';
 import { ConfidenceBadge } from './ConfidenceBadge';
 import { TrendSparkline } from './TrendSparkline';
-import { Info, Calendar, FileText, ChevronRight, ChevronDown, RefreshCw } from 'lucide-react';
+import { Info, Calendar, FileText, ChevronRight, ChevronDown, RefreshCw, AlertTriangle } from 'lucide-react';
 import clsx from 'clsx';
 
 // Helper to check if a line item has breakdown data
@@ -37,6 +37,166 @@ const getBreakdownLabels = (
   });
   return Array.from(labelsSet);
 };
+
+// =============================================================================
+// TOTAL VALIDATION HELPERS
+// =============================================================================
+
+interface MismatchInfo {
+  expected: number;
+  actual: number;
+}
+
+/** Safe extraction of a numeric value from a line item */
+const getVal = (data: Record<string, any>, field: string): number | null => {
+  const item = data[field];
+  if (item && typeof item === 'object' && 'value' in item && item.value !== null) {
+    return item.value as number;
+  }
+  return null;
+};
+
+/** Sum an array of field values from a data record, returns null if none are present */
+const sumFields = (data: Record<string, any>, fields: string[]): number | null => {
+  let sum = 0;
+  let anyPresent = false;
+  for (const f of fields) {
+    const v = getVal(data, f);
+    if (v !== null) {
+      sum += v;
+      anyPresent = true;
+    }
+  }
+  return anyPresent ? sum : null;
+};
+
+/** Check whether two values match within a tolerance */
+const valuesMatch = (a: number, b: number, tolerance = 1): boolean => {
+  return Math.abs(a - b) <= tolerance;
+};
+
+/**
+ * Validation rules for income statement totals.
+ * Each rule maps a total field to the component fields that should sum to it,
+ * with an optional sign array (1 = add, -1 = subtract).
+ */
+const INCOME_VALIDATION_RULES: Record<string, { components: string[]; signs?: number[] }> = {
+  gross_profit: {
+    components: ['revenue', 'cogs'],
+    signs: [1, -1],
+  },
+  total_operating_expenses: {
+    components: ['sga', 'research_and_development', 'depreciation_amortization', 'other_operating_expenses'],
+  },
+  operating_income: {
+    components: ['gross_profit', 'total_operating_expenses'],
+    signs: [1, -1],
+  },
+  pretax_income: {
+    components: ['operating_income', 'interest_expense', 'interest_income', 'other_income_expense'],
+    signs: [1, -1, 1, 1],
+  },
+  net_income: {
+    components: ['pretax_income', 'income_tax_expense'],
+    signs: [1, -1],
+  },
+};
+
+/**
+ * Validation rules for balance sheet totals.
+ */
+const BALANCE_VALIDATION_RULES: Record<string, { components: string[]; signs?: number[] }> = {
+  total_current_assets: {
+    components: ['cash_and_equivalents', 'short_term_investments', 'accounts_receivable', 'inventory', 'prepaid_expenses', 'other_current_assets'],
+  },
+  total_non_current_assets: {
+    components: ['ppe_net', 'intangible_assets', 'goodwill', 'long_term_investments', 'other_non_current_assets'],
+  },
+  total_assets: {
+    components: ['total_current_assets', 'total_non_current_assets'],
+  },
+  total_current_liabilities: {
+    components: ['accounts_payable', 'short_term_debt', 'accrued_expenses', 'deferred_revenue_current', 'other_current_liabilities'],
+  },
+  total_non_current_liabilities: {
+    components: ['long_term_debt', 'deferred_tax_liabilities', 'pension_liabilities', 'other_non_current_liabilities'],
+  },
+  total_liabilities: {
+    components: ['total_current_liabilities', 'total_non_current_liabilities'],
+  },
+  total_shareholders_equity: {
+    components: ['common_stock', 'additional_paid_in_capital', 'retained_earnings', 'treasury_stock', 'accumulated_other_comprehensive_income'],
+  },
+  total_liabilities_and_equity: {
+    components: ['total_liabilities', 'total_shareholders_equity'],
+  },
+};
+
+/** Compute per-period mismatch info for a given total field using provided rules */
+const computeMismatchWarnings = (
+  fieldName: string,
+  periods: Array<{ data: Record<string, any> }>,
+  rules: Record<string, { components: string[]; signs?: number[] }>
+): (MismatchInfo | null)[] => {
+  const rule = rules[fieldName];
+  if (!rule) return periods.map(() => null);
+
+  return periods.map((period) => {
+    const totalVal = getVal(period.data, fieldName);
+    if (totalVal === null) return null;
+
+    const { components, signs } = rule;
+    let computedSum = 0;
+    let anyComponentPresent = false;
+
+    for (let i = 0; i < components.length; i++) {
+      const v = getVal(period.data, components[i]);
+      if (v !== null) {
+        const sign = signs ? signs[i] : 1;
+        computedSum += v * sign;
+        anyComponentPresent = true;
+      }
+    }
+
+    if (!anyComponentPresent) return null;
+    if (valuesMatch(totalVal, computedSum)) return null;
+
+    return { expected: computedSum, actual: totalVal };
+  });
+};
+
+const computeIncomeMismatchWarnings = (
+  fieldName: string,
+  periods: Array<{ data: Record<string, any> }>
+): (MismatchInfo | null)[] => computeMismatchWarnings(fieldName, periods, INCOME_VALIDATION_RULES);
+
+const computeBalanceMismatchWarnings = (
+  fieldName: string,
+  periods: Array<{ data: Record<string, any> }>
+): (MismatchInfo | null)[] => computeMismatchWarnings(fieldName, periods, BALANCE_VALIDATION_RULES);
+
+/** Minimalist mismatch warning indicator */
+const MismatchWarning: React.FC<{
+  expected: number;
+  actual: number;
+  currency?: string;
+  scale?: string;
+}> = ({ expected, actual, currency = 'USD', scale = 'units' }) => {
+  const diff = actual - expected;
+  const sign = diff > 0 ? '+' : '';
+  return (
+    <span
+      className="inline-flex items-center text-amber-500 cursor-help"
+      title={`Sum of components: ${formatCurrency(expected, currency, scale)}  |  Difference: ${sign}${formatCurrency(diff, currency, scale)}`}
+    >
+      <AlertTriangle className="w-3 h-3" />
+    </span>
+  );
+};
+
+// =============================================================================
+// COMPONENT TYPES
+// =============================================================================
 
 interface FinancialTableProps {
   data: FinancialStatement | MultiPeriodFinancialStatement;
@@ -167,7 +327,7 @@ const MultiPeriodIncomeStatementTable: React.FC<MultiPeriodIncomeTableProps> = (
                 <th className="py-3 px-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider w-1/4 bg-gray-50/80 backdrop-blur-sm">
                   Line Item
                 </th>
-                <th className="py-3 px-3 text-center text-xs font-semibold text-gray-600 uppercase tracking-wider w-24 bg-gray-50/80 backdrop-blur-sm">
+                <th className="py-3 px-1 text-center text-[10px] font-semibold text-gray-400 uppercase tracking-wider w-14 bg-gray-50/80 backdrop-blur-sm">
                   Trend
                 </th>
                 {periods.map((period, idx) => {
@@ -233,6 +393,9 @@ const MultiPeriodIncomeStatementTable: React.FC<MultiPeriodIncomeTableProps> = (
                   ? getBreakdownLabels(periods, fieldName)
                   : [];
 
+                // Compute sum mismatch warning for total rows
+                const mismatchWarnings = computeIncomeMismatchWarnings(fieldName, periods);
+
                 return (
                   <React.Fragment key={fieldName}>
                     <tr
@@ -262,7 +425,7 @@ const MultiPeriodIncomeStatementTable: React.FC<MultiPeriodIncomeTableProps> = (
                           {fieldNameToLabel(fieldName)}
                         </div>
                       </td>
-                      <td className="py-2.5 px-3 text-center">
+                      <td className="py-2.5 px-1 text-center">
                         <TrendSparkline 
                           data={periods.map(p => {
                             const item = p.data[fieldName as keyof IncomeStatement] as LineItem;
@@ -275,10 +438,14 @@ const MultiPeriodIncomeStatementTable: React.FC<MultiPeriodIncomeTableProps> = (
                         if (!lineItem || typeof lineItem !== 'object' || !('value' in lineItem)) {
                           return <td key={periodIdx} className="py-2.5 px-3 text-sm text-right font-mono text-gray-400">—</td>;
                         }
+                        const mismatch = mismatchWarnings[periodIdx];
                         
                         return (
                           <td key={periodIdx} className="py-2.5 px-3 text-sm text-right">
                             <div className="flex items-center justify-end gap-1.5">
+                              {mismatch && (
+                                <MismatchWarning expected={mismatch.expected} actual={mismatch.actual} currency={currency} scale={scale} />
+                              )}
                               <span className="font-mono">
                                 {formatCurrency(lineItem.value, currency, scale)}
                               </span>
@@ -298,7 +465,7 @@ const MultiPeriodIncomeStatementTable: React.FC<MultiPeriodIncomeTableProps> = (
                         <td className="py-1.5 pl-9 pr-3 text-xs text-gray-600">
                           {label}
                         </td>
-                        <td className="py-1.5 px-3">
+                        <td className="py-1.5 px-1">
                           {/* No sparkline for breakdown rows */}
                         </td>
                         {periods.map((period, periodIdx) => {
@@ -440,7 +607,7 @@ const MultiPeriodBalanceSheetTable: React.FC<MultiPeriodBalanceTableProps> = ({ 
                 <th className="py-3 px-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider w-1/4 bg-gray-50/80 backdrop-blur-sm">
                   Line Item
                 </th>
-                <th className="py-3 px-3 text-center text-xs font-semibold text-gray-600 uppercase tracking-wider w-24 bg-gray-50/80 backdrop-blur-sm">
+                <th className="py-3 px-1 text-center text-[10px] font-semibold text-gray-400 uppercase tracking-wider w-14 bg-gray-50/80 backdrop-blur-sm">
                   Trend
                 </th>
                 {periods.map((period, idx) => {
@@ -506,6 +673,9 @@ const MultiPeriodBalanceSheetTable: React.FC<MultiPeriodBalanceTableProps> = ({ 
                   ? getBreakdownLabels(periods, fieldName)
                   : [];
 
+                // Compute sum mismatch warning for total rows
+                const mismatchWarnings = computeBalanceMismatchWarnings(fieldName, periods);
+
                 return (
                   <React.Fragment key={fieldName}>
                     <tr
@@ -532,7 +702,7 @@ const MultiPeriodBalanceSheetTable: React.FC<MultiPeriodBalanceTableProps> = ({ 
                           {fieldNameToLabel(fieldName)}
                         </div>
                       </td>
-                      <td className="py-2.5 px-3 text-center">
+                      <td className="py-2.5 px-1 text-center">
                         <TrendSparkline 
                           data={periods.map(p => {
                             const item = p.data[fieldName as keyof BalanceSheet] as LineItem;
@@ -545,10 +715,14 @@ const MultiPeriodBalanceSheetTable: React.FC<MultiPeriodBalanceTableProps> = ({ 
                         if (!lineItem || typeof lineItem !== 'object' || !('value' in lineItem)) {
                           return <td key={periodIdx} className="py-2.5 px-3 text-sm text-right font-mono text-gray-400">—</td>;
                         }
+                        const mismatch = mismatchWarnings[periodIdx];
                         
                         return (
                           <td key={periodIdx} className="py-2.5 px-3 text-sm text-right">
                             <div className="flex items-center justify-end gap-1.5">
+                              {mismatch && (
+                                <MismatchWarning expected={mismatch.expected} actual={mismatch.actual} currency={currency} scale={scale} />
+                              )}
                               <span className="font-mono">
                                 {formatCurrency(lineItem.value, currency, scale)}
                               </span>
@@ -568,7 +742,7 @@ const MultiPeriodBalanceSheetTable: React.FC<MultiPeriodBalanceTableProps> = ({ 
                         <td className="py-1.5 pl-9 pr-3 text-xs text-gray-600">
                           {label}
                         </td>
-                        <td className="py-1.5 px-3">
+                        <td className="py-1.5 px-1">
                           {/* No sparkline for breakdown rows */}
                         </td>
                         {periods.map((period, periodIdx) => {

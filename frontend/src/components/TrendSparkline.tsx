@@ -11,8 +11,8 @@ interface TrendSparklineProps {
 export const TrendSparkline: React.FC<TrendSparklineProps> = ({ 
   data, 
   color = '#10b981', // emerald-500
-  height = 30,
-  width = 80 
+  height = 20,
+  width = 48 
 }) => {
   // Filter out nulls for the chart, but we need to maintain index if we want to show gaps
   // For a simple sparkline, we usually just connect the points we have or show gaps.
@@ -29,7 +29,7 @@ export const TrendSparkline: React.FC<TrendSparklineProps> = ({
     strokeColor = lastVal >= firstVal ? '#10b981' : '#ef4444'; // green vs red
   }
 
-  if (data.every(d => d === null)) return <div className="w-20 h-8" />;
+  if (data.every(d => d === null)) return <div className="w-12 h-5" />;
 
   return (
     <div style={{ width, height }}>

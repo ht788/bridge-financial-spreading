@@ -1726,11 +1726,29 @@ def _invoke_llm_for_multi_period_spreading(
     )
     
     # Invoke the LLM - single call for all periods
-    result = structured_llm.invoke(messages, config=config)
+    # Retry on empty/malformed structured output (e.g. model returns {} with no 'periods')
+    max_retries = 3
+    last_error = None
+    for attempt in range(1, max_retries + 1):
+        try:
+            result = structured_llm.invoke(messages, config=config)
+            # Validate that periods were actually returned
+            if not result.periods:
+                raise ValueError("LLM returned an empty periods list")
+            logger.info(f"[MULTI-PERIOD] Extracted {len(result.periods)} periods in single LLM call (attempt {attempt})")
+            return result
+        except (ValidationError, ValueError) as e:
+            last_error = e
+            if attempt < max_retries:
+                logger.warning(
+                    f"[MULTI-PERIOD] Attempt {attempt}/{max_retries} failed: {e}. Retrying..."
+                )
+            else:
+                logger.error(
+                    f"[MULTI-PERIOD] All {max_retries} attempts failed. Last error: {e}"
+                )
     
-    logger.info(f"[MULTI-PERIOD] Extracted {len(result.periods)} periods in single LLM call")
-    
-    return result
+    raise last_error
 
 
 @traceable(
@@ -2922,11 +2940,25 @@ Extract the {doc_type} statement data following the schema. For interim monthly 
         }
     )
     
-    # Invoke the LLM
+    # Invoke the LLM with retry on empty/malformed structured output
     logger.info(f"[EXCEL] Extracting {doc_type} statement from CSV data...")
-    result = structured_llm.invoke(messages, config=config)
-    
-    logger.info(f"[EXCEL] Extracted {len(result.periods)} periods")
+    max_retries = 3
+    last_error = None
+    result = None
+    for attempt in range(1, max_retries + 1):
+        try:
+            result = structured_llm.invoke(messages, config=config)
+            if not result.periods:
+                raise ValueError("LLM returned an empty periods list")
+            logger.info(f"[EXCEL] Extracted {len(result.periods)} periods (attempt {attempt})")
+            break
+        except (ValidationError, ValueError) as e:
+            last_error = e
+            if attempt < max_retries:
+                logger.warning(f"[EXCEL] Attempt {attempt}/{max_retries} failed: {e}. Retrying...")
+            else:
+                logger.error(f"[EXCEL] All {max_retries} attempts failed. Last error: {e}")
+                raise last_error
     
     # Post-processing: standardize period labels
     for period_data in result.periods:

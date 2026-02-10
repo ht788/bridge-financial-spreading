@@ -1,8 +1,7 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { PDFViewer } from './PDFViewer';
 import { FinancialTable } from './FinancialTable';
 import { ExportMenu } from './ExportMenu';
-import { LendingAnalysisPanel } from './LendingAnalysisPanel';
 import { 
   SpreadMetadata, 
   FinancialStatement, 
@@ -103,6 +102,43 @@ export const SpreadingView: React.FC<SpreadingViewProps> = ({
       setActivePdfUrl(pdfUrl);
     }
   };
+
+  // --- Resizable split pane logic ---
+  const [leftPanelPct, setLeftPanelPct] = useState(50); // percentage width of the left (PDF) panel
+  const isDragging = useRef(false);
+  const containerRef = useRef<HTMLDivElement>(null);
+
+  const handleMouseDown = useCallback((e: React.MouseEvent) => {
+    e.preventDefault();
+    isDragging.current = true;
+    document.body.style.cursor = 'col-resize';
+    document.body.style.userSelect = 'none';
+  }, []);
+
+  useEffect(() => {
+    const handleMouseMove = (e: MouseEvent) => {
+      if (!isDragging.current || !containerRef.current) return;
+      const rect = containerRef.current.getBoundingClientRect();
+      const newPct = ((e.clientX - rect.left) / rect.width) * 100;
+      // Clamp between 20% and 80%
+      setLeftPanelPct(Math.min(80, Math.max(20, newPct)));
+    };
+
+    const handleMouseUp = () => {
+      if (isDragging.current) {
+        isDragging.current = false;
+        document.body.style.cursor = '';
+        document.body.style.userSelect = '';
+      }
+    };
+
+    window.addEventListener('mousemove', handleMouseMove);
+    window.addEventListener('mouseup', handleMouseUp);
+    return () => {
+      window.removeEventListener('mousemove', handleMouseMove);
+      window.removeEventListener('mouseup', handleMouseUp);
+    };
+  }, []);
 
   return (
     <div className={hideBackButton ? "flex flex-col" : "flex flex-col h-screen"}>
@@ -254,15 +290,36 @@ export const SpreadingView: React.FC<SpreadingViewProps> = ({
         )}
       </div>
 
-      {/* Main Content - Side by Side */}
-      <div className="flex-1 flex overflow-hidden">
+      {/* Main Content - Side by Side with draggable divider */}
+      <div className="flex-1 flex overflow-hidden" ref={containerRef}>
         {/* Left Panel - PDF Viewer */}
-        <div className="w-1/2 border-r border-gray-200">
+        <div
+          className="border-r border-gray-200 overflow-hidden flex-shrink-0"
+          style={{ width: `${leftPanelPct}%` }}
+        >
           <PDFViewer pdfUrl={activePdfUrl || metadata.pdf_url} />
         </div>
 
+        {/* Draggable Divider */}
+        <div
+          onMouseDown={handleMouseDown}
+          className="w-1.5 flex-shrink-0 cursor-col-resize bg-gray-200 hover:bg-blue-400 active:bg-blue-500 transition-colors relative group"
+          title="Drag to resize"
+        >
+          {/* Visible grip dots */}
+          <div className="absolute inset-0 flex items-center justify-center">
+            <div className="flex flex-col gap-1">
+              <div className="w-1 h-1 rounded-full bg-gray-400 group-hover:bg-white transition-colors" />
+              <div className="w-1 h-1 rounded-full bg-gray-400 group-hover:bg-white transition-colors" />
+              <div className="w-1 h-1 rounded-full bg-gray-400 group-hover:bg-white transition-colors" />
+              <div className="w-1 h-1 rounded-full bg-gray-400 group-hover:bg-white transition-colors" />
+              <div className="w-1 h-1 rounded-full bg-gray-400 group-hover:bg-white transition-colors" />
+            </div>
+          </div>
+        </div>
+
         {/* Right Panel - Financial Table */}
-        <div className="w-1/2 overflow-auto bg-gray-50">
+        <div className="flex-1 overflow-auto bg-gray-50 min-w-0">
           <div className="p-6 space-y-4">
             {displayData ? (
               <>
@@ -272,14 +329,6 @@ export const SpreadingView: React.FC<SpreadingViewProps> = ({
                   onPeriodSelect={handlePeriodSelect}
                 />
                 
-                {/* Lending Analysis Panel - Only show for Income Statement data */}
-                {effectiveDocType === 'income' && (
-                  <LendingAnalysisPanel 
-                    data={displayData}
-                    currency={isMultiPeriod(displayData) ? (displayData as MultiPeriodIncomeStatement).currency : undefined}
-                    scale={isMultiPeriod(displayData) ? (displayData as MultiPeriodIncomeStatement).scale : undefined}
-                  />
-                )}
                 
                 {/* JSON Data Viewer - Discrete Section */}
                 <JsonViewerContainer title="Raw Extraction Data">

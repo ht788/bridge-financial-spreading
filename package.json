@@ -1,0 +1,10 @@
+{
+  "name": "bridge-financial-spreading",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "start": "python main.py --interactive",
+    "dev": "python main.py --interactive",
+    "spread": "python main.py"
+  }
+}
