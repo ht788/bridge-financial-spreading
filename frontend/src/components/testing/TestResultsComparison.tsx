@@ -308,11 +308,15 @@ export const TestResultsComparison: React.FC<TestResultsComparisonProps> = ({ re
         </div>
       </div>
 
-      {/* Main Content Area - Split View */}
-      <div className="flex-1 flex overflow-hidden gap-4 min-h-0">
+      {/* Main Content Area - Split View with draggable divider */}
+      <div className="flex-1 flex overflow-hidden min-h-0" ref={splitContainerRef}>
         {/* Left Pane: Document Viewer */}
         {showPdf && selectedFile && (
-           <div className="flex-1 bg-white border border-gray-200 rounded-xl overflow-hidden flex flex-col shadow-sm">
+          <>
+           <div
+              className="bg-white border border-gray-200 rounded-xl overflow-hidden flex flex-col shadow-sm flex-shrink-0"
+              style={{ width: `${leftPanelPct}%` }}
+           >
               <div className="px-3 py-2 border-b border-gray-200 flex justify-between items-center bg-gray-50">
                  <div className="flex items-center gap-2">
                     <FileText className="w-4 h-4 text-gray-500" />
@@ -348,10 +352,28 @@ export const TestResultsComparison: React.FC<TestResultsComparisonProps> = ({ re
                  )}
               </div>
            </div>
+
+           {/* Draggable Divider */}
+           <div
+             onMouseDown={handleDividerMouseDown}
+             className="w-1.5 flex-shrink-0 cursor-col-resize bg-gray-200 hover:bg-blue-400 active:bg-blue-500 transition-colors relative group mx-1 rounded-full"
+             title="Drag to resize"
+           >
+             <div className="absolute inset-0 flex items-center justify-center">
+               <div className="flex flex-col gap-1">
+                 <div className="w-1 h-1 rounded-full bg-gray-400 group-hover:bg-white transition-colors" />
+                 <div className="w-1 h-1 rounded-full bg-gray-400 group-hover:bg-white transition-colors" />
+                 <div className="w-1 h-1 rounded-full bg-gray-400 group-hover:bg-white transition-colors" />
+                 <div className="w-1 h-1 rounded-full bg-gray-400 group-hover:bg-white transition-colors" />
+                 <div className="w-1 h-1 rounded-full bg-gray-400 group-hover:bg-white transition-colors" />
+               </div>
+             </div>
+           </div>
+          </>
         )}
 
         {/* Right Pane: Results */}
-        <div className={`${showPdf ? 'w-[500px] xl:w-[600px]' : 'w-full'} flex flex-col gap-4 transition-all duration-300 flex-shrink-0`}>
+        <div className="flex-1 flex flex-col gap-4 min-w-0">
            
            {/* Controls if PDF is hidden */}
            {!showPdf && (
