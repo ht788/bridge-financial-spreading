@@ -20,13 +20,14 @@ export const TrendSparkline: React.FC<TrendSparklineProps> = ({
   
   const chartData = data.map((val, idx) => ({ i: idx, val }));
   
-  // Determine color based on trend (first vs last)
+  // Determine color based on trend. Data is typically newest-first (first = recent, last = older).
+  // "Going up" over time = first > last → green. "Going down" = first < last → red.
   const firstVal = data.find(d => d !== null);
   const lastVal = [...data].reverse().find(d => d !== null);
   
   let strokeColor = color;
   if (firstVal !== undefined && lastVal !== undefined && firstVal !== null && lastVal !== null) {
-    strokeColor = lastVal >= firstVal ? '#10b981' : '#ef4444'; // green vs red
+    strokeColor = firstVal >= lastVal ? '#10b981' : '#ef4444'; // up (or flat) = green, down = red
   }
 
   if (data.every(d => d === null)) return <div className="w-12 h-5" />;
